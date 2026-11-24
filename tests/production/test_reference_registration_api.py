@@ -619,7 +619,10 @@ def test_ltx_pilot_compiles_exact_frozen_first_frame_without_admission(state):
     # 01. Use the existing synthetic fixture, replacing ONLY its fixture
     #     package with a legitimate portrait four-second source before approval.
     from picotoopet_core.creative.repository import CreativeRepository
-    from picotoopet_core.production.ltx_plan import compile_ltx_pilot_plan, LTX_SCOPE
+    from picotoopet_core.production.ltx_plan import (
+        compile_ltx_pilot_plan, LTX_SCOPE, LtxPilotFreezeRequestV12,
+        freeze_ltx_pilot_job, load_frozen_ltx_pilot_plan,
+    )
     from picotoopet_core.production.repository import ProductionRepository
     from picotoopet_core.production.service import ProductionService
     from picotoopet_core.production.store import ProductionArtifactStore
@@ -688,10 +691,51 @@ def test_ltx_pilot_compiles_exact_frozen_first_frame_without_admission(state):
     assert not db.fetchall("SELECT * FROM production_jobs", ())
     assert not db.fetchall("SELECT * FROM production_attempts", ())
 
-    # 04. Revoked consent cannot produce another plan.
+    # 04. Persist a real held job in the existing database, atomically.
+    #     Its v1.2 digest is immutable and the old worker cannot claim it.
+    request = LtxPilotFreezeRequestV12(
+        creative_package_id=PACKAGE, approved_reference_id=receipt.approval_id,
+        idempotency_key="ltx-pilot-freeze",
+    )
+    frozen_job = freeze_ltx_pilot_job(service, request)
+    assert frozen_job.status.value == "NeedsHuman"
+    assert frozen_job.production_profile.value == "production.ltx.desktop.local.v1"
+    frozen = load_frozen_ltx_pilot_plan(service, frozen_job.production_job_id)
+    assert frozen.digest() == frozen_job.plan_digest
+    assert freeze_ltx_pilot_job(service, request) == frozen_job
+    assert len(db.fetchall("SELECT * FROM production_jobs", ())) == 1
+    assert not db.fetchall("SELECT * FROM production_tasks", ())
+    assert not db.fetchall("SELECT * FROM production_attempts", ())
+    with pytest.raises(ValueError, match="PRODUCTION_PLAN_SCHEMA_UNSUPPORTED"):
+        service.repository.claim_job(frozen_job.production_job_id, "legacy-worker")
+    assert service.repository.get_job(frozen_job.production_job_id) == frozen_job
+    assert not db.fetchall(
+        "SELECT * FROM production_jobs WHERE lease_token_digest IS NOT NULL", ()
+    )
+    with pytest.raises(ValueError, match="LTX_PLAN_IDEMPOTENCY_CONFLICT"):
+        freeze_ltx_pilot_job(service, request.model_copy(
+            update={"creative_package_id": str(uuid4())},
+        ))
+
+    # 05. Revoked consent cannot produce another plan or replay as authority.
     registration.revoke(
         receipt.approval_id, request_digest=receipt.approval_request_digest,
         reason="synthetic revoke",
     )
     with pytest.raises(ValueError, match="REFERENCE_ASSET_APPROVAL_NOT_VERIFIED"):
         compile_plan()
+    with pytest.raises(ValueError, match="REFERENCE_ASSET_APPROVAL_NOT_VERIFIED"):
+        freeze_ltx_pilot_job(service, request)
+    with pytest.raises(ValueError, match="REFERENCE_ASSET_APPROVAL_NOT_VERIFIED"):
+        freeze_ltx_pilot_job(service, request.model_copy(
+            update={"idempotency_key": "ltx-after-revoke"},
+        ))
+    assert len(db.fetchall("SELECT * FROM production_jobs", ())) == 1
+    assert not db.fetchall("SELECT * FROM production_attempts", ())
+    # 06. Audit reads may retain historical bytes after revoke, but never
+    #     accept a corrupted digest or transform that history into a lease.
+    assert load_frozen_ltx_pilot_plan(service, frozen_job.production_job_id) == frozen
+    db.execute("UPDATE production_jobs SET plan_digest=? WHERE production_job_id=?",
+               ("0" * 64, frozen_job.production_job_id))
+    with pytest.raises(ValueError, match="LTX_PLAN_PERSISTED_IDENTITY_MISMATCH"):
+        load_frozen_ltx_pilot_plan(service, frozen_job.production_job_id)
