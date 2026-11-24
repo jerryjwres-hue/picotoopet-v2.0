@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Org.BouncyCastle.Math.EC.Rfc8032;
 using PicotooPet.Desktop.Core.Production;
+using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.Services.ProductionReference;
 
 namespace PicotooPet.MediaWorker.SmokeTests;
@@ -152,6 +153,7 @@ internal static class WorkerSignerTests
         File.Delete(blob);
         Throws(() => ProtectedWorkerSigningKey.Open(root, executor, fingerprint));
         Throws(() => ProtectedWorkerSigningKey.Create(root, executor));
+        await LtxMeasuredAsync();
         Console.WriteLine("P0_WORKER_DPAPI_RESTART_TAMPER_REPLAY=PASS; GPU_POSTS=0; I2V=BLOCKED");
     }
 
@@ -207,6 +209,54 @@ internal static class WorkerSignerTests
         try { await process.WaitForExitAsync(timeout.Token); }
         catch { process.Kill(entireProcessTree: true); throw; }
         Assert(process.ExitCode == 0, "restart child: " + await output + await errors);
+    }
+
+    // 01. Real Windows snapshot + existing protected key; fixture-only
+    //     consent. The separate Core HTTP test exercises actual approval.
+    private static async Task LtxMeasuredAsync()
+    {
+        using var f = new DurableReferenceSnapshotTests.Fixture();
+        const string executor = "windows-same-exe-worker";
+        var root = Path.Combine(f.Root, "ltx-signing-key");
+        var id = ProtectedWorkerSigningKey.Create(root, executor);
+        var key = ProtectedWorkerSigningKey.Open(root, executor, id.Fingerprint);
+        var reference = f.Reference with { RightsScope = "ltx.desktop.local.i2v.production.v1" };
+        var digest = Hash("ltx-frozen-fixture"u8.ToArray());
+        var intent = Hash("ltx-intent-fixture"u8.ToArray());
+        using var gpu = f.Journal.AcquireGpu();
+        using var snapshot = await f.Store().PrepareLtxAsync(reference, digest, intent,
+            new LtxFixtureConsent(f), f.Journal, gpu, CancellationToken.None);
+        Assert(File.ReadAllBytes(f.Full(snapshot.RelativePath)).SequenceEqual(f.Bytes), "exact LTX snapshot bytes");
+        var now = DateTimeOffset.UtcNow;
+        var draft = JsonNode.Parse((await MeasuredAsync(f, snapshot, id, now)).GetRawText())!;
+        draft["schema_version"] = "production.ltx.worker_witness.v1";
+        Task<string> Sign() => key.SignLtxMeasuredUnderLockAsync(JsonSerializer.SerializeToElement(draft),
+            reference, digest, intent, snapshot, f.Journal, gpu, now, CancellationToken.None);
+        f.Approved = false;
+        await DeniedAsync(Sign);
+        f.Approved = true;
+        draft["references"]!.AsArray()[0]!["graph_digest"] = new string('f', 64);
+        await DeniedAsync(Sign);
+        draft["references"]!.AsArray()[0]!["graph_digest"] = intent;
+        Assert(!Directory.EnumerateFiles(root, "used-*").Any(), "failed LTX scope does not reserve nonce");
+        var signature = await Sign();
+        var payload = WorkerWitnessEncoding.LtxPayload(JsonSerializer.SerializeToElement(draft));
+        Assert(Ed25519.Verify(Convert.FromHexString(signature), 0, Convert.FromHexString(id.PublicKeyHex),
+            0, payload, 0, payload.Length), "actual DPAPI LTX signature");
+        await DeniedAsync(Sign);
+        Assert(f.Journal.Pending().Count == 0, "LTX measurement never submits media");
+        Console.WriteLine("P0_LTX_DPAPI_MEASURED_SIGNATURE=PASS; GPU_POSTS=0");
+    }
+
+    private sealed class LtxFixtureConsent(DurableReferenceSnapshotTests.Fixture fixture) : ITrustedReferenceApprovalSource
+    {
+        public Task<bool> IsApprovedAsync(TrustedReferenceDescriptor descriptor, CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            var r = fixture.Reference;
+            return Task.FromResult(fixture.Approved && descriptor == new TrustedReferenceDescriptor(
+                r.ApprovalId, r.ShotId, r.AssetId, r.InputRelativePath, r.Sha256, r.Bytes));
+        }
     }
 
     private static async Task<JsonElement> MeasuredAsync(DurableReferenceSnapshotTests.Fixture f, DurableReferenceSnapshot lease, WorkerPublicIdentity id, DateTimeOffset now)
