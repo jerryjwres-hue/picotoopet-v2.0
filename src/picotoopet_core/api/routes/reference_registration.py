@@ -33,7 +33,7 @@ def _service(request: Request) -> ReferenceRegistrationService:
     return ReferenceRegistrationService(services.database, services.approvals, services.creative_store)
 
 
-@router.post("/production/references/batches", response_model=ReferenceBatchReceiptV1, status_code=201)
+@router.post("/production/references/batches", response_model=ReferenceBatchReceiptV1, response_model_exclude_none=True, status_code=201)
 def register_reference_batch(
     payload: ReferenceBatchRequestV1,
     request: Request,
@@ -47,7 +47,7 @@ def register_reference_batch(
     return _run(lambda: _service(request).register(payload, idempotency_key=idempotency_key))
 
 
-@router.get("/production/references/batches/{approval_id}", response_model=ReferenceBatchReceiptV1)
+@router.get("/production/references/batches/{approval_id}", response_model=ReferenceBatchReceiptV1, response_model_exclude_none=True)
 def get_reference_batch(approval_id: str, request: Request) -> ReferenceBatchReceiptV1:
     return _run(lambda: _service(request).get(approval_id))
 
@@ -58,7 +58,7 @@ class ReferenceRevokeRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=500)
 
 
-@router.post("/production/references/batches/{approval_id}/revoke", response_model=ReferenceBatchReceiptV1)
+@router.post("/production/references/batches/{approval_id}/revoke", response_model=ReferenceBatchReceiptV1, response_model_exclude_none=True)
 def revoke_reference_batch(
     approval_id: str, payload: ReferenceRevokeRequest, request: Request
 ) -> ReferenceBatchReceiptV1:
