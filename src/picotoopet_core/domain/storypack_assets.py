@@ -84,17 +84,43 @@ def inspect_recorded_asset_refs(
     refs: list[str],
     *,
     managed_objects_dir: Path | None = None,
+    expected_kinds: dict[str, str] | None = None,
 ) -> list[dict]:
-    """Check artifact records and optionally hash bounded managed bytes, without writes."""
+    """Check artifact records and optionally hash bounded managed bytes, without writes.
+
+    ``expected_kinds`` maps a ref to the StoryPack slot kind (character_master,
+    scene_master, identity_lock). All added fields are additive and read-only; a
+    missing record is explained, never replaced by an invented artifact ID.
+    """
+    # Lazy import: the registry module reuses this module's managed-object verifier.
+    from picotoopet_core.domain.storypack_asset_registry import (
+        ARTIFACT_TYPE_KINDS,
+        is_core_artifact_id,
+        owner_approval_status,
+    )
+    from picotoopet_core.domain.storypack_asset_registry import (
+        _byte_provenance as byte_provenance_of,
+    )
+
+    expected_kinds = expected_kinds or {}
     checks = []
     remaining = _MAX_PREVIEW_BYTES
     for ref in dict.fromkeys(refs):
         row = database.fetchone(
-            "SELECT artifact_type, sha256, stored_object_hash, is_original "
-            "FROM artifacts WHERE artifact_id = ?",
+            "SELECT artifact_id, project_id, artifact_type, sha256, stored_object_hash, "
+            "is_original, size_bytes, media_type FROM artifacts WHERE artifact_id = ?",
             (ref,),
         )
+        expected_kind = expected_kinds.get(ref)
+        asset_kind = None
+        provenance = None
+        approval_state = "NOT_REQUESTED"
+        missing_reason = None
         if row is None:
+            missing_reason = (
+                "ARTIFACT_NOT_REGISTERED" if is_core_artifact_id(ref)
+                else "REF_IS_NOT_A_CORE_ARTIFACT_ID"
+            )
             status = "RECORD_NOT_FOUND"
             recorded_sha256 = None
             has_digest = False
@@ -112,6 +138,11 @@ def inspect_recorded_asset_refs(
             status = "RECORDED_UNAPPROVED" if has_digest else "RECORD_HASH_MISSING"
             is_original = row["is_original"] == 1
             category = row["artifact_type"]
+            asset_kind = ARTIFACT_TYPE_KINDS.get(category)
+            if asset_kind is not None:
+                provenance = byte_provenance_of(asset_kind, row)
+                if has_digest:
+                    approval_state, _ = owner_approval_status(database, row)
             if not has_digest:
                 managed_status = "RECORD_HASH_MISSING"
                 integrity_verified = False
@@ -137,10 +168,22 @@ def inspect_recorded_asset_refs(
                 "artifact_type": category,
                 "managed_object_integrity": managed_status,
                 # 内容哈希通过，只证明本次读取的文件字节与登记摘要一致。
-                "owner_approval_verified": False,
+                "owner_approval_verified": approval_state == "APPROVED",
                 "content_integrity_verified": integrity_verified,
                 "physical_file_verified": integrity_verified,
+                # A preview never authorizes generation, even for approved assets.
                 "usable_for_generation": False,
+                "missing_reason": missing_reason,
+                "expected_asset_kind": expected_kind,
+                "asset_kind": asset_kind,
+                "kind_check": (
+                    "NOT_CHECKED" if expected_kind is None
+                    else "RECORD_NOT_FOUND" if row is None
+                    else "KIND_MATCHES_SLOT" if asset_kind == expected_kind
+                    else "ARTIFACT_KIND_MISMATCH"
+                ),
+                "byte_provenance": provenance,
+                "owner_approval_status": approval_state,
             }
         )
 

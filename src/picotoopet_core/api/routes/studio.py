@@ -14,6 +14,10 @@ from picotoopet_core.domain.storypack_scoped_goal import (
 from picotoopet_core.domain.storypack import StoryPackError, parse_storypack, storypack_preview
 from picotoopet_core.domain.storypack_assets import inspect_recorded_asset_refs
 from picotoopet_core.domain.storypack_asset_intake import MAX_ASSET_BYTES, import_local_asset
+from picotoopet_core.domain.storypack_asset_registry import (
+    OwnerApprovalRequestV1, WindowsClaimRequestV1, find_by_sha256, production_eligibility,
+    register_windows_claim, request_owner_approval, storypack_expected_kinds,
+)
 from picotoopet_core.domain.storypack_fingerprints import build_shot_fingerprints
 from picotoopet_core.domain.storypack_goal_intake import build_storypack_goal_intake
 from picotoopet_core.domain.storypack_owner_subject import build_owner_review_subject
@@ -68,6 +72,8 @@ async def preview_storypack(request: Request, response: Response) -> dict:
         preview["unresolved_asset_refs"],
         # 只能验证 Core 托管的 SHA 命名对象，绝不访问用户提交的 source_path。
         managed_objects_dir=request.app.state.services.settings.paths.objects_dir,
+        # Slot kinds only explain mismatches; they never register or approve anything.
+        expected_kinds=storypack_expected_kinds(pack),
     )
     preview["fingerprint_plan"] = build_shot_fingerprints(
         pack, preview["storypack_sha256"], preview["asset_record_checks"]
@@ -136,6 +142,70 @@ async def import_storypack_asset(
     except OSError as exc:
         raise ApiError(status_code=409, code="ASSET_STORE_UNAVAILABLE",
                        message="Managed store unavailable.", retryable=False) from exc
+
+
+def _asset_error(exc: Exception) -> ApiError:
+    """Map registry denials to stable codes without echoing paths or internals."""
+    code = str(exc)
+    if isinstance(exc, LookupError):
+        return ApiError(status_code=404, code="ASSET_NOT_FOUND",
+                        message="Asset is not registered in Core.", retryable=False)
+    if not code.startswith(("ASSET_", "ARTIFACT_")):
+        code = "ASSET_REQUEST_REJECTED"
+    return ApiError(status_code=409, code=code,
+                    message="Asset registry request rejected.", retryable=False)
+
+
+@router.post("/studio/assets/windows-evidence", status_code=201)
+def register_windows_asset_claim(
+    payload: WindowsClaimRequestV1, request: Request, response: Response
+) -> dict:
+    """Record a Windows-verified digest for a file Core cannot read (LoRA, workflow).
+
+    Core stores no bytes and claims no byte verification; this grants nothing.
+    """
+    response.headers["Cache-Control"] = "no-store, private"
+    try:
+        return register_windows_claim(request.app.state.services.database, payload)
+    except ValueError as exc:
+        raise _asset_error(exc) from exc
+
+
+@router.get("/studio/assets/by-sha256")
+def lookup_assets_by_sha256(
+    request: Request,
+    response: Response,
+    sha256: str = Query(pattern=r"^[0-9a-fA-F]{64}$"),
+    project_id: str | None = Query(default=None, min_length=1, max_length=100),
+) -> dict:
+    """Full-SHA-256 lookup of real StoryPack artifact IDs. Prefixes are rejected."""
+    response.headers["Cache-Control"] = "no-store, private"
+    services = request.app.state.services
+    return find_by_sha256(services.database, sha256, project_id=project_id,
+                          objects_dir=services.results.objects_dir)
+
+
+@router.post("/studio/assets/{artifact_id}/owner-approval-request", status_code=201)
+def request_asset_owner_approval(
+    artifact_id: str, payload: OwnerApprovalRequestV1, request: Request, response: Response
+) -> dict:
+    """Open one pending approval in the existing approvals table; never approve it."""
+    response.headers["Cache-Control"] = "no-store, private"
+    services = request.app.state.services
+    try:
+        return request_owner_approval(services.database, services.approvals, artifact_id,
+                                      payload, objects_dir=services.results.objects_dir)
+    except (LookupError, ValueError) as exc:
+        raise _asset_error(exc) from exc
+
+
+@router.get("/studio/assets/{artifact_id}/production-eligibility")
+def asset_production_eligibility(artifact_id: str, request: Request, response: Response) -> dict:
+    """Read-only reference eligibility. Eligible is never a GPU authorization."""
+    response.headers["Cache-Control"] = "no-store, private"
+    services = request.app.state.services
+    return production_eligibility(services.database, artifact_id,
+                                  objects_dir=services.results.objects_dir)
 
 
 @router.get("/studio/owner-subject-packets")

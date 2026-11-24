@@ -51,6 +51,9 @@ class HandoffApprovalService(ApprovalService):
             "shot_ids",
             "rights_scope",
             "creative_package_id",
+            # StoryPack existing-asset Owner approvals (P0-1).
+            "asset_kind",
+            "byte_provenance",
         }
     )
 
