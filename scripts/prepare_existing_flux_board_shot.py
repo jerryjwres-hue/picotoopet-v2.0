@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import importlib.util
+import types
 import json
 import re
 import stat
@@ -170,13 +170,14 @@ def prepare(
     if len(lora_bytes) != LORA_V2_SIZE or _sha(lora_bytes) != LORA_V2_SHA256:
         raise _bad("LORA_V2_SHA_MISMATCH")
 
-    runner_spec = importlib.util.spec_from_file_location(
-        "_picotoo_sha_pinned_original_flux_board", str(runner_file)
-    )
-    if runner_spec is None or runner_spec.loader is None:
-        raise _bad("RUNNER_LOAD_FAILED")
-    module = importlib.util.module_from_spec(runner_spec)
-    runner_spec.loader.exec_module(module)
+    # 07. Execute *the exact bytes already verified*, not a second disk
+    #     read between digest verification and module loading (TOCTOU).
+    #     The pinned original source only starts ComfyUI in main(); this
+    #     module is deliberately named differently, so main() never runs.
+    module = types.ModuleType("_picotoo_sha_pinned_original_flux_board")
+    module.__file__ = str(runner_file)
+    exec(compile(runner_raw.decode("utf-8-sig"), runner_file.name, "exec"),
+         module.__dict__)
     if not callable(getattr(module, "build", None)):
         raise _bad("RUNNER_BUILD_NOT_FOUND")
 
