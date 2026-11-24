@@ -124,6 +124,55 @@ internal static class LtxDesktopLocalI2vResultSmokeTests
             "LTX_GENERATION_EXPECTATION_INVALID");
         SmokeAssert.Equal(oldCount, handler.GetCount, "Unsafe ID caused HTTP request");
         SmokeAssert.Equal(0, handler.PostCount, "No POST allowed during result readback");
+        // 06. Export existing bytes without GPU. A valid container signature
+        //     alone does not prove video geometry or actual decoded frames.
+        var directory = Path.Combine(Path.GetTempPath(), "p0-ltx-export-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var export = await client.ExportCompletedCandidateAsync(expect, directory);
+            var target = Path.Combine(directory, export.LocalFileName);
+            SmokeAssert.True(File.ReadAllBytes(target).SequenceEqual(handler.Media),
+                "Downloaded candidate bytes changed");
+            SmokeAssert.Equal(Convert.ToHexStringLower(
+                System.Security.Cryptography.SHA256.HashData(handler.Media)), export.Sha256,
+                "Export receipt must hash actual downloaded bytes");
+            SmokeAssert.Equal((long)handler.Media.Length, export.Bytes, "Export byte count mismatch");
+            SmokeAssert.True(export.Inspection.MediaBytesDownloaded
+                && !export.Inspection.MediaGeometryVerified
+                && !export.Inspection.CanCommitProductionResult,
+                "Downloading bytes is not final production acceptance");
+
+            var downloads = handler.DownloadCount;
+            await ExpectFailureAsync(client.ExportCompletedCandidateAsync(expect, directory),
+                "LTX_EXPORT_ALREADY_EXISTS");
+            SmokeAssert.Equal(downloads, handler.DownloadCount, "Existing output fetched again");
+            File.Delete(target);
+
+            handler.Media = Encoding.ASCII.GetBytes("not-a-valid-video");
+            await ExpectFailureAsync(client.ExportCompletedCandidateAsync(expect, directory),
+                "LTX_EXPORT_CONTAINER_SIGNATURE_INVALID");
+            SmokeAssert.Equal(0, Directory.GetFiles(directory).Length,
+                "Invalid response left candidate or temporary file");
+
+            handler.Media = FakeResultServer.MakeMedia();
+            handler.MediaMime = "text/html";
+            await ExpectFailureAsync(client.ExportCompletedCandidateAsync(expect, directory),
+                "LTX_EXPORT_MEDIA_RESPONSE_INVALID");
+            handler.MediaMime = "video/mp4";
+            handler.DeclaredLength = handler.Media.Length + 1;
+            await ExpectFailureAsync(client.ExportCompletedCandidateAsync(expect, directory),
+                "LTX_EXPORT_MEDIA_INCOMPLETE");
+            handler.DeclaredLength = null;
+            SmokeAssert.Equal(0, Directory.GetFiles(directory).Length,
+                "Truncated or wrong MIME response left a file");
+            SmokeAssert.Equal(0, handler.PostCount, "Export may not submit a new generation");
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+
         Console.WriteLine("LTX_GENERATION_LANE_LOCAL=VERIFIED_FIXTURE_ONLY; COMMIT=BLOCKED; GPU_POST=0");
     }
 
@@ -162,6 +211,17 @@ internal static class LtxDesktopLocalI2vResultSmokeTests
         public int PostCount { get; private set; }
         public string? LastPath { get; private set; }
         public string? Authorization { get; private set; }
+        public int DownloadCount { get; private set; }
+        public byte[] Media { get; set; } = MakeMedia();
+        public string MediaMime { get; set; } = "video/mp4";
+        public long? DeclaredLength { get; set; }
+
+        // Synthetic header only: never claim this fixture is a playable MP4.
+        public static byte[] MakeMedia() => new byte[]
+        {
+            0, 0, 0, 24, 102, 116, 121, 112, 105, 115, 111, 109,
+            0, 0, 0, 0, 105, 115, 111, 109, 109, 112, 52, 50,
+        };
 
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request, CancellationToken cancellationToken)
@@ -170,6 +230,16 @@ internal static class LtxDesktopLocalI2vResultSmokeTests
             {
                 PostCount++;
                 throw new InvalidOperationException("LTX_RESULT_READBACK_MUST_NOT_POST");
+            }
+            if (request.RequestUri?.PathAndQuery == SignedVideoPath)
+            {
+                DownloadCount++;
+                if (request.RequestUri.Host != "127.0.0.1" || request.RequestUri.Port != 41955)
+                    throw new InvalidOperationException("MEDIA_GET_NOT_LOOPBACK");
+                var body = new ByteArrayContent(Media);
+                body.Headers.ContentType = new MediaTypeHeaderValue(MediaMime);
+                if (DeclaredLength.HasValue) body.Headers.ContentLength = DeclaredLength;
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = body });
             }
             GetCount++;
             LastPath = request.RequestUri?.AbsolutePath;
