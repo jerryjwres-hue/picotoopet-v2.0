@@ -67,10 +67,14 @@ public static class ReferenceBatchValidation
 
         var shots = new HashSet<string>(StringComparer.Ordinal);
         var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        // 02. The current LTX pilot freezes exactly one reference. Never mix scopes.
+        // 02. LTX permits a first-shot pilot or a complete three-shot batch.
+        //     Different paths cannot silently re-label identical image bytes.
         if (request.SelectedReferences.Any(x => x is null)
             || request.SelectedReferences.Select(x => x.RightsScope).Distinct(StringComparer.Ordinal).Count() != 1
-            || (request.SelectedReferences[0].RightsScope == LtxRightsScope && request.SelectedReferences.Length != 1))
+            || (request.SelectedReferences[0].RightsScope == LtxRightsScope
+                && (request.SelectedReferences.Length is not (1 or 3)
+                    || request.SelectedReferences.Select(x => x.Sha256).Distinct(StringComparer.Ordinal).Count()
+                        != request.SelectedReferences.Length)))
             throw new ArgumentException("REFERENCE_BATCH_SCOPE_INVALID", nameof(request));
         foreach (var candidate in request.SelectedReferences)
         {
@@ -132,7 +136,11 @@ public static class ReferenceBatchValidation
             || receipt.Status is not ("Pending" or "Approved" or "Rejected" or "Revoked" or "Expired")
             || receipt.ExpiresAt == default || receipt.References is not { Length: >= 1 and <= 12 }
             || receipt.RightsScope is not (null or LtxRightsScope)
-            || (receipt.RightsScope == LtxRightsScope && receipt.References.Length != 1))
+            || (receipt.RightsScope == LtxRightsScope
+                && (receipt.References.Length is not (1 or 3)
+                    || receipt.References.Any(x => x is null)
+                    || receipt.References.Select(x => x.Sha256).Distinct(StringComparer.Ordinal).Count()
+                        != receipt.References.Length)))
         {
             throw new InvalidDataException("REFERENCE_BATCH_RECEIPT_INVALID");
         }

@@ -200,13 +200,21 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
         }
         return string.Join("\n", text);
     }
-    public bool CanResumeReferenceBatch => CanEdit && _p0PlanCandidate
+    public bool CanResumeReferenceBatch => CanEdit && (_p0PlanCandidate || _portraitFluxCandidate)
         && _initialReceipt is null && Items.Count == 0;
-    // 01. Portrait preview may stage only the first shot for the current LTX
-    //     pilot. Other shots are review-only until multi-shot admission exists.
+    // 01. Preserve the first-shot pilot and require complete, distinct
+    //     three-shot coverage for the new portrait batch.
+    private bool LtxCoverage(IEnumerable<string> ids)
+    {
+        var selected = ids.ToArray();
+        return (selected.Length == 1 && selected[0] == EligibleShots[0])
+            || (selected.Length == 3 && selected.ToHashSet(StringComparer.Ordinal).SetEquals(_eligibleShots));
+    }
+    private bool DistinctSelectedImages => Items.Select(x => x.Sha256)
+        .Distinct(StringComparer.Ordinal).Count() == Items.Count;
     public bool CanSubmit => !IsBusy && _initialReceipt is null && _consent && Items.Count > 0
         && (_portraitFluxCandidate
-            ? Items.Count == 1 && Items[0].ShotId == EligibleShots[0]
+            ? LtxCoverage(Items.Select(x => x.ShotId)) && DistinctSelectedImages
             : (!_requiresFullV2Batch || (Items.Count == _eligibleShots.Count
                 && Items.Select(x => x.Sha256).Distinct(StringComparer.Ordinal).Count() == Items.Count)));
     public bool CanRefresh => !IsBusy && _initialReceipt is not null;
@@ -215,15 +223,19 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
         get => _createdProductionJob;
         private set => SetProperty(ref _createdProductionJob, value);
     }
+    public IReadOnlyList<ProductionJobRecord> CreatedLtxJobs { get; private set; } = Array.Empty<ProductionJobRecord>();
     public string ReviewedPlanLabel => _portraitFluxCandidate
-        ? "冻结已审核的 LTX 首镜头计划（不启动 GPU）"
+        ? "冻结已审核的 LTX 计划（首镜头或完整三镜头，不启动 GPU）"
         : "创建已审核的三镜头生产计划（不启动 GPU）";
+    public string SelectionCoverageHint => _portraitFluxCandidate
+        ? "LTX：请选择首镜头进行试运行，或选择三张不同镜头首帧进行完整批次审批。"
+        : "按照当前创意包要求选择参考图。";
     public bool CanCreateReviewedPlan => !IsBusy && _approvalFresh
         && Receipt is { Status: "Approved" } receipt && receipt.ExpiresAt > DateTimeOffset.UtcNow
         && CreatedProductionJob is null
         && (_portraitFluxCandidate
             ? _gateway is IReviewedLtxPilotGateway && receipt.RightsScope == ReferenceBatchValidation.LtxRightsScope
-                && receipt.References.Length == 1 && receipt.References[0].ShotId == EligibleShots[0]
+                && LtxCoverage(receipt.References.Select(x => x.ShotId))
             : _p0PlanCandidate && _gateway is IReviewedThreeShotPlanGateway
                 && receipt.RightsScope is null && receipt.References.Length == 3);
     public string StatusText { get => _statusText; private set => SetProperty(ref _statusText, value); }
@@ -242,9 +254,12 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
             if (receipt.ApprovalId != approvalId || receipt.GoalId != GoalId
                 || receipt.CreativePackageId != CreativePackageId
                 || receipt.CreativePackageDigest != CreativePackageDigest
-                || receipt.References.Length != 3
-                || !receipt.References.Select(x => x.ShotId)
-                    .ToHashSet(StringComparer.Ordinal).SetEquals(_eligibleShots))
+                || (_portraitFluxCandidate
+                    ? receipt.RightsScope != ReferenceBatchValidation.LtxRightsScope
+                        || !LtxCoverage(receipt.References.Select(x => x.ShotId))
+                    : receipt.RightsScope is not null || receipt.References.Length != 3
+                        || !receipt.References.Select(x => x.ShotId)
+                            .ToHashSet(StringComparer.Ordinal).SetEquals(_eligibleShots)))
                 throw new InvalidDataException("REFERENCE_RESUME_SCOPE_INVALID");
 
             // 02. 从 Core 回执重建只读请求，但不调用 Register/POST。
@@ -255,7 +270,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
                 "reference_batch.v1", GoalId, CreativePackageId, CreativePackageDigest,
                 references.Select(x => new ReferenceCandidate(
                     x.ShotId, x.InputRelativePath, x.Sha256, x.Bytes,
-                    x.SourceReference, x.SourceDigest, "wan22.i2v.production.v1")).ToArray(),
+                    x.SourceReference, x.SourceDigest, receipt.RightsScope ?? ReferenceBatchValidation.WanRightsScope)).ToArray(),
                 true);
             ReferenceBatchValidation.ValidateReceipt(reconstructed, receipt);
 
@@ -288,7 +303,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
             _approvalFresh = false;
             _consent = false;
             RaisePropertyChanged(nameof(UserConfirmsPreviewAndRights));
-            StatusText = "既有三镜头批次已恢复（仅本地只读），请先刷新 Core 审批状态；不会重复注册。";
+            StatusText = "既有参考图审批已恢复（仅本地只读），请先刷新 Core 审批状态；不会重复注册。";
         }
         catch
         {
@@ -714,10 +729,9 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
     public async Task AddObservedCandidateAsync(ReferenceObservedCandidate observed,
         string comfyOutputRoot, string licensedSourceDigest, CancellationToken cancellationToken = default)
     {
-        // 01. The LTX pilot accepts only the exact first shot, not a substitute
-        //     from a later composition or a silent Wan authorization.
+        // 01. All frozen shots may be staged; submission validates coverage
+        //     and the separate LTX authorization scope.
         if (!CanEdit || observed is null || !ObservedCandidates.Contains(observed)
-            || (_portraitFluxCandidate && observed.ShotId != EligibleShots[0])
             || !IsDigest(licensedSourceDigest) || !Path.IsPathFullyQualified(comfyOutputRoot))
             throw new InvalidDataException("KEYFRAME_OBSERVED_RIGHTS_OR_SCOPE_REQUIRED");
         var path = ProductionLocalEnvironment.ResolveUnderRoot(
@@ -784,7 +798,6 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
     {
         AssertEditable();
         if (!_eligibleShots.Contains(shotId)
-            || (_portraitFluxCandidate && shotId != EligibleShots[0])
             || sourceReference is not "USER_SUPPLIED" and not "LICENSED"
             || (sourceReference == "LICENSED" && !IsDigest(sourceDigest))
             || (!_snapshots.ContainsKey(shotId) && Items.Count >= 12))
@@ -832,8 +845,8 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
         {
             if (!_consent) throw new InvalidDataException("REFERENCE_EXPLICIT_CONSENT_REQUIRED");
             // ── The new v2 Core contract requires all three trusted shot/image claims.
-            if (_portraitFluxCandidate && (Items.Count != 1 || Items[0].ShotId != EligibleShots[0]))
-                throw new InvalidDataException("REFERENCE_LTX_FIRST_SHOT_REQUIRED");
+            if (_portraitFluxCandidate && !LtxCoverage(Items.Select(x => x.ShotId)))
+                throw new InvalidDataException("REFERENCE_LTX_FIRST_OR_FULL_COVERAGE_REQUIRED");
             if (!_portraitFluxCandidate && _requiresFullV2Batch && Items.Count != _eligibleShots.Count)
                 throw new InvalidDataException("REFERENCE_V2_FULL_COVERAGE_REQUIRED");
             // 07. Direct callers cannot bypass a disabled WPF button and
@@ -948,29 +961,48 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
             Receipt = fresh;
             if (fresh.Status != "Approved" || fresh.ExpiresAt <= DateTimeOffset.UtcNow
                 || fresh.RightsScope != ReferenceBatchValidation.LtxRightsScope
-                || fresh.References.Length != 1 || fresh.References[0].ShotId != EligibleShots[0])
+                || !LtxCoverage(fresh.References.Select(x => x.ShotId)))
                 throw new InvalidDataException("REFERENCE_LTX_APPROVAL_NOT_CURRENT");
-            var key = "reviewed-ltx-pilot-v12-" + fresh.ApprovalId + "-" + fresh.ApprovalRequestDigest;
-            var job = await production.FreezeReviewedLtxPilotAsync(CreativePackageId, fresh.ApprovalId, key, ct);
-            if (job.CreativePackageId != CreativePackageId || job.CreativePackageDigest != CreativePackageDigest
-                || job.ProjectKey != "goal-" + GoalId || job.IdempotencyKey != key
-                || !Services.ProductionReference.LtxProductionExecutor.IsSelected(job))
-                throw new InvalidDataException("REFERENCE_LTX_JOB_MISMATCH");
-            var plan = await production.ReadReviewedLtxPlanAsync(job.ProductionJobId, ct);
-            var bound = Services.ProductionReference.LtxProductionExecutor.ValidatePlan(job, plan);
-            var selected = fresh.References[0];
-            if (bound.ApprovalId != fresh.ApprovalId || bound.ApprovalRequestDigest != fresh.ApprovalRequestDigest
-                || bound.AssetId != selected.AssetId || bound.ShotId != selected.ShotId
-                || bound.InputRelativePath != selected.InputRelativePath
-                || bound.Sha256 != selected.Sha256 || bound.Bytes != selected.Bytes
-                || bound.SourceReference != selected.SourceReference || bound.SourceDigest != selected.SourceDigest)
-                throw new InvalidDataException("REFERENCE_LTX_PLAN_REFERENCE_MISMATCH");
-            CreatedProductionJob = job;
-            StatusText = "LTX 首镜头计划已冻结并核对；GPU HOLD 未改变。";
+            var full = fresh.References.Length == 3;
+            var jobs = new List<ProductionJobRecord>();
+            // 02. Keep stable keys across timeouts and application restart.
+            //     Every freeze stays held; a partial response never starts GPU.
+            foreach (var selected in fresh.References.OrderBy(x => Array.IndexOf(EligibleShots, x.ShotId)))
+            {
+                ct.ThrowIfCancellationRequested();
+                var key = "reviewed-ltx-pilot-v12-" + fresh.ApprovalId + "-" + fresh.ApprovalRequestDigest;
+                if (full) key += "-shot-" + (Array.IndexOf(EligibleShots, selected.ShotId) + 1);
+                await VerifySnapshotsAsync(request, ct);
+                var current = await ReadBoundReceiptAsync(request, initial, ct);
+                Receipt = current;
+                if (current.Status != "Approved" || current.ExpiresAt <= DateTimeOffset.UtcNow)
+                    throw new InvalidDataException("REFERENCE_LTX_APPROVAL_NOT_CURRENT");
+                var job = await production.FreezeReviewedLtxPilotAsync(CreativePackageId, fresh.ApprovalId,
+                    key, ct, full ? selected.ShotId : null);
+                if (job.CreativePackageId != CreativePackageId || job.CreativePackageDigest != CreativePackageDigest
+                    || job.ProjectKey != "goal-" + GoalId || job.IdempotencyKey != key
+                    || jobs.Any(x => x.ProductionJobId == job.ProductionJobId)
+                    || !Services.ProductionReference.LtxProductionExecutor.IsSelected(job))
+                    throw new InvalidDataException("REFERENCE_LTX_JOB_MISMATCH");
+                var plan = await production.ReadReviewedLtxPlanAsync(job.ProductionJobId, ct);
+                var bound = Services.ProductionReference.LtxProductionExecutor.ValidatePlan(job, plan);
+                if (bound.ApprovalId != fresh.ApprovalId || bound.ApprovalRequestDigest != fresh.ApprovalRequestDigest
+                    || bound.AssetId != selected.AssetId || bound.ShotId != selected.ShotId
+                    || bound.InputRelativePath != selected.InputRelativePath
+                    || bound.Sha256 != selected.Sha256 || bound.Bytes != selected.Bytes
+                    || bound.SourceReference != selected.SourceReference || bound.SourceDigest != selected.SourceDigest)
+                    throw new InvalidDataException("REFERENCE_LTX_PLAN_REFERENCE_MISMATCH");
+                jobs.Add(job);
+            }
+            // 03. Publish the ordered batch only after all exact plans match.
+            CreatedLtxJobs = jobs.AsReadOnly();
+            RaisePropertyChanged(nameof(CreatedLtxJobs));
+            CreatedProductionJob = jobs[0];
+            StatusText = $"已冻结并核对 {jobs.Count} 个 LTX 镜头计划；GPU HOLD 未改变。";
         }
         catch
         {
-            StatusText = "LTX 计划尚未核验；刷新审批后可用同一幂等键重试。";
+            StatusText = "LTX 批次尚未完整核验；部分计划可能已冻结，刷新审批后用同一幂等键重试。";
             throw;
         }
         finally { Exit(); }

@@ -21,7 +21,8 @@ public interface IReviewedThreeShotPlanGateway : IReferenceBatchGateway
 public interface IReviewedLtxPilotGateway : IReferenceBatchGateway
 {
     Task<ProductionJobRecord> FreezeReviewedLtxPilotAsync(string creativePackageId,
-        string approvalId, string idempotencyKey, CancellationToken cancellationToken);
+        string approvalId, string idempotencyKey, CancellationToken cancellationToken,
+        string? selectedShotId = null);
     Task<System.Text.Json.JsonElement> ReadReviewedLtxPlanAsync(string jobId, CancellationToken cancellationToken);
 }
 

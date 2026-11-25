@@ -145,6 +145,22 @@ internal static class ReferenceBatchClientSmokeTests
             InputRelativePath = "PicotooPet/references/b.png" };
         Reject(() => ReferenceBatchValidation.ValidateRequest(ltx with { SelectedReferences = [ltx.SelectedReferences[0], second] }));
         Reject(() => ReferenceBatchValidation.ValidateRequest(wan with { SelectedReferences = [wan.SelectedReferences[0], second] }));
+        // 02. Full LTX consent requires three distinct images and exact scope.
+        var distinctSecond = second with { Sha256 = B };
+        var third = second with { ShotId = "shot-3", InputRelativePath = "PicotooPet/references/c.png",
+            Sha256 = new string('c', 64) };
+        var full = ltx with { SelectedReferences = [ltx.SelectedReferences[0], distinctSecond, third] };
+        ReferenceBatchValidation.ValidateRequest(full);
+        Reject(() => ReferenceBatchValidation.ValidateRequest(full with
+            { SelectedReferences = [ltx.SelectedReferences[0], second, third] }));
+        var registered = scoped.References[0];
+        var fullReceipt = scoped with { References = [registered,
+            registered with { AssetId = "66666666-6666-4666-8666-666666666666", ShotId = distinctSecond.ShotId,
+                InputRelativePath = distinctSecond.InputRelativePath, Sha256 = distinctSecond.Sha256 },
+            registered with { AssetId = "77777777-7777-4777-8777-777777777777", ShotId = third.ShotId,
+                InputRelativePath = third.InputRelativePath, Sha256 = third.Sha256 }] };
+        ReferenceBatchValidation.ValidateReceipt(full, fullReceipt);
+        Reject(() => ReferenceBatchValidation.ValidateReceipt(full, fullReceipt with { RightsScope = null }));
         SmokeAssert.True(ReferenceBatchValidation.IdempotencyKey(ltx) != ReferenceBatchValidation.IdempotencyKey(wan),
             "Renderer consent must change immutable request identity");
     }

@@ -820,13 +820,23 @@ internal sealed class CoreWorkerChallengeClient : IDisposable
     // 01. Historical frozen plan readback uses the same paired session.
     // 01. Explicit held reservation only, using the already paired Core.
     internal async Task<ProductionJobRecord> FreezeLtxPilotAsync(string packageId, string approvalId,
-        string key, CancellationToken ct)
+        string key, CancellationToken ct, string? selectedShotId = null)
     {
         if (!Guid.TryParseExact(packageId, "D", out _) || !Guid.TryParseExact(approvalId, "D", out _)
-            || string.IsNullOrWhiteSpace(key) || key.Length > 200)
+            || string.IsNullOrWhiteSpace(key) || key.Length > 200
+            || (selectedShotId is not null && (selectedShotId.Length is < 1 or > 80
+                || selectedShotId.Any(ch => !char.IsAsciiLetterOrDigit(ch) && ch is not ('_' or '.' or '-')))))
             throw Invalid("LTX_FREEZE_REQUEST_INVALID");
-        using var result = await PostAsync("api/v1/production/jobs/v1.2/freeze",
-            new { creative_package_id = packageId, approved_reference_id = approvalId, idempotency_key = key },
+        // 02. Keep the old first-shot wire shape unchanged; only full-batch
+        //     selection sends the explicit Core-owned shot identity.
+        var payload = new JsonObject
+        {
+            ["creative_package_id"] = packageId,
+            ["approved_reference_id"] = approvalId,
+            ["idempotency_key"] = key
+        };
+        if (selectedShotId is not null) payload["selected_shot_id"] = selectedShotId;
+        using var result = await PostAsync("api/v1/production/jobs/v1.2/freeze", payload,
             HttpStatusCode.OK, ct).ConfigureAwait(false);
         return result.RootElement.Deserialize<ProductionJobRecord>() ?? throw Invalid("LTX_FREEZE_RECEIPT_INVALID");
     }

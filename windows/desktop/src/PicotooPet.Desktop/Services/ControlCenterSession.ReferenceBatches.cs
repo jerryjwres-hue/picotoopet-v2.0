@@ -26,10 +26,12 @@ public sealed partial class ControlCenterSession : IReviewedThreeShotPlanGateway
 
     // 01. Same paired session, existing frozen v1.2 contract; no lease or GPU.
     public async Task<ProductionJobRecord> FreezeReviewedLtxPilotAsync(string creativePackageId,
-        string approvalId, string idempotencyKey, CancellationToken cancellationToken)
+        string approvalId, string idempotencyKey, CancellationToken cancellationToken,
+        string? selectedShotId = null)
     {
         using var client = CreateWorkerChallengePreflightClient();
-        return await client.FreezeLtxPilotAsync(creativePackageId, approvalId, idempotencyKey, cancellationToken).ConfigureAwait(false);
+        return await client.FreezeLtxPilotAsync(creativePackageId, approvalId, idempotencyKey,
+            cancellationToken, selectedShotId).ConfigureAwait(false);
     }
 
     public async Task<System.Text.Json.JsonElement> ReadReviewedLtxPlanAsync(string jobId, CancellationToken cancellationToken)
