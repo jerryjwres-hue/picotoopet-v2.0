@@ -8,10 +8,12 @@ import json
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "prepare_existing_flux_board_shot.py"
+sys.path.insert(0, str(SCRIPT.parent))
 SPEC = importlib.util.spec_from_file_location("_existing_flux_board_handoff", SCRIPT)
 assert SPEC and SPEC.loader
 module = importlib.util.module_from_spec(SPEC)
@@ -202,3 +204,46 @@ class ExistingFluxBoardHandoffTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "DUPLICATE_JSON_KEY"):
             module.prepare(request_file=self.request, runner_file=self.runner,
                            lora_file=self.lora, output_dir=self.output)
+
+
+    def test_core_batch_and_single_shot_reroll_use_frozen_kit(self):
+        # 01. Real Core ZIP parser and existing frozen-kit checks, synthetic assets.
+        from test_prepare_local_keyframe_batch import fixture, PACKAGE_ID
+        from prepare_local_keyframe_batch import canonical_bytes
+        _, _, _, package = fixture()
+        package["stage_results"]["creative_brief.v1"]["output_profile_id"] = "video.vertical.v1"
+        archive = self.root / "package.zip"
+        with zipfile.ZipFile(archive, "w") as z:
+            z.writestr(f"{PACKAGE_ID}/creative-package.json", canonical_bytes(package))
+        digest = _sha(archive.read_bytes())
+        bindings = self.root / "bindings.json"
+        mapping = {"schema": "picotoo.flux-board-reference-map.v1", "creative_package_sha256": digest,
+                   "shots": {f"shot-{i}": self.value["references"] for i in range(1, 4)}}
+        bindings.write_text(json.dumps(mapping), encoding="utf-8")
+        def run(name, variant, shot=None):
+            return module.prepare_package_batch(package_file=archive, package_sha=digest,
+                bindings_file=bindings, runner_file=self.runner, lora_file=self.lora,
+                output_dir=self.root / name, variant=variant, selected_shot=shot)
+        batch = run("batch", 0)
+        self.assertEqual([x["shot_id"] for x in batch["shots"]], ["shot-1", "shot-2", "shot-3"])
+        self.assertEqual(len({x["seed"] for x in batch["shots"]}), 3)
+        self.assertFalse(batch["production_authorized"])
+        for record in batch["shots"]:
+            folder = self.root / "batch" / record["relative_directory"]
+            raw = (folder / "flux_board_candidate_api_graph.json").read_bytes()
+            self.assertEqual(_sha(raw), record["api_graph_sha256"])
+            self.assertEqual(_sha(raw.rstrip(b"\n")), record["graph_canonical_sha256"])
+            self.assertEqual(json.loads(raw)["4"]["inputs"]["text"],
+                             f"mtai_dog, Opening state {record['order']}")
+        reroll = run("reroll", 1, "shot-2")
+        self.assertEqual(len(reroll["shots"]), 1)
+        self.assertNotEqual(reroll["shots"][0]["seed"], batch["shots"][1]["seed"])
+        before = (self.root / "batch" / "batch_manifest.json").read_bytes()
+        with self.assertRaisesRegex(ValueError, "OUTPUT_DIR_MUST_BE_NEW"):
+            run("batch", 1)
+        self.assertEqual((self.root / "batch" / "batch_manifest.json").read_bytes(), before)
+        del mapping["shots"]["shot-3"]
+        bindings.write_text(json.dumps(mapping), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "CORE_SHOT_REFERENCES_MISSING"):
+            run("missing", 0)
+        self.assertFalse((self.root / "missing").exists())

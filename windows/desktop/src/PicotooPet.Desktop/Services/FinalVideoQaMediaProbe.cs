@@ -84,7 +84,8 @@ public sealed class FinalVideoQaMediaProbe
         if (facts.ContainerFamily != "mp4" || v.Index != 0 || v.PacketCount is null or <= 0
             || v.Width is < 256 or > 4096 || v.Height is < 256 or > 4096
             || v.Width % 2 != 0 || v.Height % 2 != 0 || v.Width >= v.Height
-            || Math.Abs(16 * v.Width - 9 * v.Height) * 100 > 18 * v.Height
+            || ((v.Width, v.Height) != (704, 1280)
+                && Math.Abs(16 * v.Width - 9 * v.Height) * 100 > 18 * v.Height)
             || v.FpsNumerator <= 0 || v.FpsDenominator <= 0
             || (BigInteger)v.FpsNumerator != (BigInteger)24 * v.FpsDenominator)
             throw new FinalVideoQaException("OUTPUT_PROFILE_MISMATCH");

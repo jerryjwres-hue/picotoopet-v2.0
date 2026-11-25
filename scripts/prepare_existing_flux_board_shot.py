@@ -14,6 +14,7 @@ import types
 import json
 import re
 import stat
+import tempfile
 from pathlib import Path
 
 RUNNER_SHA256 = "fba9b6f004871664c92c75f1c36170a17ceef89b47f3a2c71032df472405d2bd"
@@ -113,10 +114,25 @@ def prepare(
     spec = _read_json(request_file)
     if spec.get("schema") != REQUEST_SCHEMA:
         raise _bad("REQUEST_SCHEMA_INVALID")
-    _validate_sha(spec.get("source_storypack_sha256"))
+    # 01. Core packages and old StoryPacks are distinct input identities.
+    core_source = "creative_package_sha256" in spec
+    if core_source:
+        _validate_sha(spec.get("creative_package_sha256"))
+        _validate_sha(spec.get("keyframe_kit_digest"))
+        if "source_storypack_sha256" in spec:
+            raise _bad("SOURCE_SCOPE_CONFLICT")
+    else:
+        _validate_sha(spec.get("source_storypack_sha256"))
     shot_id = spec.get("shot_id")
-    if not isinstance(shot_id, str) or SHOT_PATTERN.fullmatch(shot_id) is None:
+    if not isinstance(shot_id, str) or (
+        not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", shot_id) if core_source
+        else SHOT_PATTERN.fullmatch(shot_id) is None
+    ):
         raise _bad("SHOT_ID_INVALID")
+    if core_source and (shot_id in (".", "..")
+        or type(spec.get("order")) is not int or not 1 <= spec["order"] <= 3
+        or type(spec.get("variant")) is not int or not 0 <= spec["variant"] <= 10000):
+        raise _bad("SHOT_VARIANT_INVALID")
     seed = spec.get("seed")
     if type(seed) is not int or not 0 <= seed < 2**64:
         raise _bad("SEED_INVALID")
@@ -125,7 +141,7 @@ def prepare(
         or "mtai_dog" not in prompt.split(",")):
         raise _bad("PROMPT_TRIGGER_INVALID")
     source_profile = spec.get("source_output_profile")
-    if source_profile not in ("p0_landscape", "design_portrait"):
+    if source_profile not in (("video.vertical.v1",) if core_source else ("p0_landscape", "design_portrait")):
         raise _bad("SOURCE_PROFILE_UNKNOWN")
 
     # 05. This always generates a portrait draft 864x1536 because that is
@@ -187,7 +203,10 @@ def prepare(
     # 07. Preserve the exact original FLUX node logic (ReferenceLatent,
     #     LoraLoaderModelOnly, Flux2Scheduler) by calling its existing build().
     job = {
-        "id": "P0_" + shot_id,
+        # 02. Per-package, shot and variant output prefixes prevent a reroll
+        #     from overwriting or being confused with another candidate.
+        "id": (f"P0_{spec['creative_package_sha256'][:16]}_S{spec['order']:02d}_v{spec['variant']:05d}"
+               if core_source else "P0_" + shot_id),
         "refs": legacy_refs,
         "seeds": [seed],
         "prompt": prompt,
@@ -226,7 +245,10 @@ def prepare(
     manifest = {
         "schema": MANIFEST_SCHEMA,
         "runner_source_sha256": RUNNER_SHA256,
-        "source_storypack_sha256": spec["source_storypack_sha256"],
+        **({"creative_package_sha256": spec["creative_package_sha256"],
+            "keyframe_kit_digest": spec["keyframe_kit_digest"],
+            "order": spec["order"], "variant": spec["variant"]}
+           if core_source else {"source_storypack_sha256": spec["source_storypack_sha256"]}),
         "source_output_profile": source_profile,
         "draft_still_profile": "flux2.still.864x1536.v1",
         "source_profile_conversion_performed": False,
@@ -243,6 +265,7 @@ def prepare(
         "seed": seed,
         "job_file_sha256": _sha(as_bytes["flux_board_single_job.json"]),
         "api_graph_sha256": _sha(as_bytes["flux_board_candidate_api_graph.json"]),
+        "graph_canonical_sha256": _sha(as_bytes["flux_board_candidate_api_graph.json"].rstrip(b"\n")),
         "input_state": "LOCAL_BYTES_VERIFIED_CREATIVE_DRAFT",
         "production_authorized": False,
         "owner_approved": False,
@@ -259,19 +282,116 @@ def prepare(
     return manifest
 
 
+def prepare_package_batch(*, package_file: Path, package_sha: str,
+                          bindings_file: Path, runner_file: Path, lora_file: Path,
+                          output_dir: Path, variant: int, selected_shot: str | None = None) -> dict:
+    """Prepare a frozen Core Keyframe Kit with the existing FLUX builder.
+
+    Default is all three shots; a specific shot reroll preserves all others.
+    Output is a creative draft only, never a GPU submission or approval.
+    """
+    # 01. Reuse the already shipped ZIP/kit/bible verification and shot order.
+    from prepare_local_keyframe_batch import read_package, keyframes
+
+    if type(variant) is not int or not 0 <= variant <= 10000:
+        raise _bad("SHOT_VARIANT_INVALID")
+    package = read_package(package_file, package_sha)
+    if package["stage_results"]["creative_brief.v1"]["output_profile_id"] != "video.vertical.v1":
+        raise _bad("CORE_PORTRAIT_PACKAGE_REQUIRED")
+    kit_digest, frames = keyframes(package, allow_vertical_guidance=True, allow_i2v_guidance=True)
+    bindings = _read_json(bindings_file)
+    if (set(bindings) != {"schema", "creative_package_sha256", "shots"}
+        or bindings["schema"] != "picotoo.flux-board-reference-map.v1"
+        or bindings["creative_package_sha256"] != package_sha
+        or not isinstance(bindings["shots"], dict)
+        or not set(bindings["shots"]).issubset({frame["shot_id"] for frame in frames})):
+        raise _bad("CORE_REFERENCE_MAP_INVALID")
+    wanted = [frame for frame in frames if selected_shot is None or frame["shot_id"] == selected_shot]
+    if not wanted or any(frame["shot_id"] not in bindings["shots"] for frame in wanted):
+        raise _bad("CORE_SHOT_REFERENCES_MISSING")
+    if output_dir.exists() or output_dir.is_symlink() or not output_dir.parent.is_dir():
+        raise _bad("OUTPUT_DIR_MUST_BE_NEW")
+    records = []
+    # 02. Stage the entire batch privately. Missing or changed references in
+    #     shot 3 must not publish a partial shot 1/2 export.
+    with tempfile.TemporaryDirectory(prefix=".flux-batch-", dir=output_dir.parent) as staging:
+        stage = Path(staging)
+        payload = stage / "batch"
+        payload.mkdir()
+        for frame in wanted:
+            shot_id, order = frame["shot_id"], frame["order"]
+            seed = int.from_bytes(hashlib.sha256(
+                f"{package_sha}|{shot_id}|{variant}".encode("utf-8")).digest()[:8], "big") & ((1 << 63) - 1)
+            # 03. Preserve the complete frozen still prompt; add only the
+            #     known trained LoRA trigger if it is not already the first token.
+            prompt = frame["still_prompt"]
+            if "mtai_dog" not in prompt.split(","):
+                prompt = "mtai_dog, " + prompt
+            request = {
+                "schema": REQUEST_SCHEMA, "creative_package_sha256": package_sha,
+                "keyframe_kit_digest": kit_digest, "source_output_profile": "video.vertical.v1",
+                "shot_id": shot_id, "order": order, "variant": variant, "seed": seed,
+                "prompt": prompt, "references": bindings["shots"][shot_id],
+            }
+            request_path = stage / "request.json"
+            request_path.write_text(json.dumps(request, ensure_ascii=False), encoding="utf-8")
+            folder = payload / f"shot-{order:02d}"
+            folder.mkdir()
+            result = prepare(request_file=request_path, runner_file=runner_file,
+                             lora_file=lora_file, output_dir=folder)
+            records.append({
+                "shot_id": shot_id, "order": order, "seed": seed,
+                "relative_directory": folder.name,
+                "api_graph_sha256": result["api_graph_sha256"],
+                "graph_canonical_sha256": result["graph_canonical_sha256"],
+                "handoff_manifest_sha256": _sha((folder / "flux_board_handoff_manifest.json").read_bytes()),
+                "still_prompt_sha256": _sha(frame["still_prompt"].encode("utf-8")),
+                "review_checklist": frame["review_checklist"],
+            })
+        manifest = {
+            "schema": "picotoo.existing-flux-board-batch.v1",
+            "creative_package_id": package["creative_package_id"],
+            "creative_package_sha256": package_sha, "keyframe_kit_digest": kit_digest,
+            "variant": variant, "selected_shot": selected_shot, "shots": records,
+            "production_authorized": False, "owner_approved": False, "gpu_post": 0,
+        }
+        (payload / "batch_manifest.json").write_bytes(
+            json.dumps(manifest, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8") + b"\n")
+        # 04. No overwrite; Windows rename fails if a destination already exists.
+        if output_dir.exists() or output_dir.is_symlink():
+            raise _bad("OUTPUT_DIR_MUST_BE_NEW")
+        payload.rename(output_dir)
+    return manifest
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="CPU-only FLUX.2 legacy board handoff")
-    parser.add_argument("--request", type=Path, required=True)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--request", type=Path)
+    source.add_argument("--package", type=Path)
+    parser.add_argument("--package-sha256")
+    parser.add_argument("--reference-map", type=Path)
+    parser.add_argument("--variant", type=int, default=0)
+    parser.add_argument("--shot")
     parser.add_argument("--runner", type=Path, required=True)
     parser.add_argument("--lora", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
-    result = prepare(
-        request_file=args.request, runner_file=args.runner,
-        lora_file=args.lora, output_dir=args.output_dir,
-    )
-    print("FLUX_P0_6_HANDOFF=CREATIVE_DRAFT_ONLY")
-    print("GRAPH_SHA256=" + result["api_graph_sha256"])
+    if args.package is not None:
+        if args.package_sha256 is None or args.reference_map is None:
+            parser.error("--package requires --package-sha256 and --reference-map")
+        result = prepare_package_batch(package_file=args.package, package_sha=args.package_sha256,
+            bindings_file=args.reference_map, runner_file=args.runner, lora_file=args.lora,
+            output_dir=args.output_dir, variant=args.variant, selected_shot=args.shot)
+        print("FLUX_P0_6_HANDOFF=CREATIVE_DRAFT_BATCH_ONLY")
+        print("SHOT_COUNT=" + str(len(result["shots"])))
+    else:
+        if args.package_sha256 is not None or args.reference_map is not None or args.shot is not None or args.variant != 0:
+            parser.error("package options require --package")
+        result = prepare(request_file=args.request, runner_file=args.runner,
+                         lora_file=args.lora, output_dir=args.output_dir)
+        print("FLUX_P0_6_HANDOFF=CREATIVE_DRAFT_ONLY")
+        print("GRAPH_SHA256=" + result["api_graph_sha256"])
     print("PRODUCTION_AUTHORIZED=FALSE; GPU_POST=0")
     return 0
 

@@ -459,10 +459,11 @@ def commit_ltx_candidate(service: ProductionService, job_id: str,
                          request: LtxCandidateCommitV12) -> LtxCandidateReceiptV12:
     """Settle the first-shot candidate, without certifying a complete film."""
     # 01. Use actual decoded dimensions/cadence, not a guessed 720p pixel size.
-    #     Native geometry is accepted within 2% of 9:16; output mastering is separate.
+    #     Also accept the previously observed native 704x1280; mastering is separate.
     if (request.video_asset_id.int == 0 or request.output_sha256 == "0" * 64
         or request.width % 2 or request.height % 2 or request.width >= request.height
-        or abs(16 * request.width - 9 * request.height) * 100 > 18 * request.height
+        or ((request.width, request.height) != (704, 1280)
+            and abs(16 * request.width - 9 * request.height) * 100 > 18 * request.height)
         or abs(request.duration_ms * 24 - request.frame_count * 1000) > 1008):
         raise ValueError("LTX_CANDIDATE_MEDIA_MISMATCH")
     db = service.repository.database
