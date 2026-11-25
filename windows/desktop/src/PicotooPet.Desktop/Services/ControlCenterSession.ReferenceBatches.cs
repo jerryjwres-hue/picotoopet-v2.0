@@ -4,7 +4,8 @@ using PicotooPet.Desktop.Core.Networking;
 namespace PicotooPet.Desktop.Services;
 
 /// <summary>复用现有 Core 配对凭证提交待审核参考图片；此处绝不直接批准或启动 GPU。</summary>
-public sealed partial class ControlCenterSession : IReviewedThreeShotPlanGateway, IReviewedLtxPilotGateway
+public sealed partial class ControlCenterSession : IReviewedThreeShotPlanGateway, IReviewedLtxPilotGateway,
+    ILtxCandidateReviewGateway
 {
     public async Task<ReferenceBatchReceipt> RegisterReferenceBatchAsync(
         ReferenceBatchRequest request, string idempotencyKey, CancellationToken cancellationToken)
@@ -42,6 +43,12 @@ public sealed partial class ControlCenterSession : IReviewedThreeShotPlanGateway
         using var client = CreateWorkerChallengePreflightClient();
         return await client.GetLtxPlanAsync(jobId, cancellationToken).ConfigureAwait(false);
     }
+
+    // 01. The existing paired Core session owns all production reads.
+    //     No registration, claim, new renderer or directory scan is performed.
+    public Task<LtxBatchReview> ReadLtxBatchReviewAsync(ReferenceBatchReceipt receipt,
+        IReadOnlyList<string> shotIds, CancellationToken cancellationToken)
+        => LtxBatchReviewReader.ReadAsync(this, receipt, shotIds, cancellationToken);
 
     public async Task<ReferenceBatchReceipt> GetReferenceBatchAsync(string approvalId, CancellationToken cancellationToken)
     {

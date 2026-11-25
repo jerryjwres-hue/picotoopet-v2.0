@@ -341,5 +341,50 @@ public partial class ReferenceBatchPreviewPanel : UserControl
         catch (Exception) { OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, vm.StatusText); }
     }
 
+    // 01. Refresh verifies historical Core evidence and local bytes only.
+    private async void ReadLtxReview_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ReferenceBatchPreviewViewModel vm || !vm.CanReadLtxReview) return;
+        try { await vm.ReadLtxReviewAsync(); }
+        catch (Exception) { OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, vm.StatusText); }
+    }
+
+    private async void PlayLtxShot_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ReferenceBatchPreviewViewModel vm || !vm.CanReadLtxReview
+            || sender is not Button { Tag: string shotId }) return;
+        try
+        {
+            var result = await vm.ReadLtxReviewAsync();
+            if (result.Shots.SingleOrDefault(shot => shot.ShotId == shotId)?.LocalPath is { } path)
+                OpenVerifiedLtxVideo(path);
+        }
+        catch (Exception) { OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, "无法打开已核验的本地镜头。"); }
+    }
+
+    private async void PlayLtxRoughCut_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ReferenceBatchPreviewViewModel vm || !vm.CanReadLtxReview) return;
+        try
+        {
+            var result = await vm.ReadLtxReviewAsync();
+            if (result.RoughCutPath is { } path) OpenVerifiedLtxVideo(path);
+        }
+        catch (Exception) { OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, "无法打开已核验的本地候选影片。"); }
+    }
+
+    private static void OpenVerifiedLtxVideo(string path)
+    {
+        // 02. Explicit click opens only a freshly verified local MP4. Never
+        //     execute a caller-provided command or send media to a remote URL.
+        if (!MasterVideoPathPolicy.IsSafeLocalFullyQualified(path)
+            || !path.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase)
+            || !ProductionLocalEnvironment.IsOrdinaryFile(path))
+            throw new InvalidDataException("LTX_REVIEW_LOCAL_FILE_REQUIRED");
+        ProductionLocalEnvironment.AssertNoLinkEscape(Path.GetPathRoot(path)!, path);
+        using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path)
+        { UseShellExecute = true });
+    }
+
     private void OpenApprovals_Click(object sender, RoutedEventArgs e) => ApprovalsRequested?.Invoke(this, EventArgs.Empty);
 }

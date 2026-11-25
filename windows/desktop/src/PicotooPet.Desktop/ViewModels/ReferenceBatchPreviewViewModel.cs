@@ -228,6 +228,44 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
     public bool CanArmReviewedLtxJobs => !IsBusy && _portraitFluxCandidate
         && _gateway is IReviewedLtxPilotGateway && CreatedLtxJobs.Count is 1 or 3
         && Receipt is { Status: "Approved" } receipt && receipt.ExpiresAt > DateTimeOffset.UtcNow;
+    // 01. Readback remains available after reopening the existing receipt,
+    //     even if the approval expired after successful production.
+    public bool CanReadLtxReview => !IsBusy && _portraitFluxCandidate
+        && _gateway is ILtxCandidateReviewGateway
+        && Receipt is { RightsScope: ReferenceBatchValidation.LtxRightsScope } receipt
+        && LtxCoverage(receipt.References.Select(x => x.ShotId));
+    private LtxBatchReview? _ltxReview;
+    public LtxBatchReview? LtxReview
+    {
+        get => _ltxReview;
+        private set => SetProperty(ref _ltxReview, value);
+    }
+    public async Task<LtxBatchReview> ReadLtxReviewAsync(CancellationToken ct = default)
+    {
+        if (!CanReadLtxReview || _gateway is not ILtxCandidateReviewGateway review
+            || Receipt is not { } receipt)
+            throw new InvalidDataException("LTX_REVIEW_CONTEXT_INVALID");
+        if (!Enter()) throw new InvalidOperationException("REFERENCE_OPERATION_BUSY");
+        try
+        {
+            LtxReview = null;
+            var initial = _initialReceipt ?? throw new InvalidDataException("REFERENCE_RECEIPT_REQUIRED");
+            var request = _frozenRequest ?? throw new InvalidDataException("REFERENCE_REQUEST_REQUIRED");
+            var fresh = await ReadBoundReceiptAsync(request, initial, ct);
+            Receipt = fresh;
+            var result = await review.ReadLtxBatchReviewAsync(fresh, EligibleShots, ct);
+            LtxReview = result;
+            StatusText = result.Summary;
+            return result;
+        }
+        catch
+        {
+            LtxReview = null;
+            StatusText = "LTX 结果未能核验；不显示旧影片，也不触发重新生成。";
+            throw;
+        }
+        finally { Exit(); }
+    }
     public string ReviewedPlanLabel => _portraitFluxCandidate
         ? "冻结已审核的 LTX 计划（首镜头或完整三镜头，不启动 GPU）"
         : "创建已审核的三镜头生产计划（不启动 GPU）";
@@ -1246,6 +1284,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
         RaisePropertyChanged(nameof(CanRefresh));
         RaisePropertyChanged(nameof(CanCreateReviewedPlan));
         RaisePropertyChanged(nameof(CanArmReviewedLtxJobs));
+        RaisePropertyChanged(nameof(CanReadLtxReview));
     }
     private static string Text(JsonElement element, string property) => element.ValueKind == JsonValueKind.Object
         && element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString()! : string.Empty;

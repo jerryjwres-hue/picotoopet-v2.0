@@ -198,6 +198,23 @@
      <DataTemplate><TextBlock Text="{Binding ProductionJobId, StringFormat=LTX Job：{0}}" TextWrapping="Wrap"/></DataTemplate>
     </ItemsControl.ItemTemplate>
    </ItemsControl>
+   <!-- 01. Explicit read-only result discovery; no GPU or automatic approval. -->
+   <Button Content="刷新 LTX 视频结果" HorizontalAlignment="Left" Padding="12,7" Margin="0,4,0,8"
+           IsEnabled="{Binding CanReadLtxReview, FallbackValue=False}" Click="ReadLtxReview_Click"/>
+   <ItemsControl ItemsSource="{Binding LtxReview.Shots}">
+    <ItemsControl.ItemTemplate>
+     <DataTemplate>
+      <WrapPanel Margin="0,2,0,4">
+       <TextBlock Text="{Binding ShotId}" FontWeight="SemiBold" Margin="0,0,10,0" VerticalAlignment="Center"/>
+       <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,10,0"/>
+       <Button Content="播放镜头" Tag="{Binding ShotId}" IsEnabled="{Binding CanPlay}" Click="PlayLtxShot_Click" Padding="8,3"/>
+      </WrapPanel>
+     </DataTemplate>
+    </ItemsControl.ItemTemplate>
+   </ItemsControl>
+   <Button Content="播放完整 LTX 候选影片（待审核）" HorizontalAlignment="Left" Padding="12,7"
+           Margin="0,4,0,8" IsEnabled="{Binding LtxReview.CanPlayRoughCut, FallbackValue=False}"
+           Click="PlayLtxRoughCut_Click"/>
    <TextBlock x:Name="OperationStatusText" Text="{Binding StatusText}" TextWrapping="Wrap" Margin="0,4,0,10" AutomationProperties.LiveSetting="Polite" />
    <StackPanel>
     <TextBlock Text="Core 审批回执" FontWeight="SemiBold" />

@@ -17,8 +17,9 @@ internal static class LtxRoughCutAssembly
         WriteIndented = true
     };
 
-    internal static async Task AssembleAsync(ControlCenterSession session,
-        IReadOnlyList<ProductionJobRecord> jobs, string batchIdentity, CancellationToken ct)
+    internal static async Task<string?> AssembleAsync(ControlCenterSession session,
+        IReadOnlyList<ProductionJobRecord> jobs, string batchIdentity, CancellationToken ct,
+        bool readOnly = false)
     {
         if (jobs.Count != 3 || jobs.Any(job => !LtxProductionExecutor.IsCandidateSettled(job))
             || ProductionSubmissionJournal.Hash(string.Join("\n", jobs.Select(job =>
@@ -84,9 +85,12 @@ internal static class LtxRoughCutAssembly
                 "PicotooPet", "FinalVideos", "LtxCandidates");
             if (!MasterVideoPathPolicy.IsSafeLocalFullyQualified(root))
                 throw new InvalidDataException("LTX_ROUGH_CUT_ROOT_INVALID");
-            ProductionLocalEnvironment.AssertNoLinkEscape(root, root);
+            // 03a. A read-only review must not create a directory or encode.
+            //      Check ancestors, including those above the managed root.
+            ProductionLocalEnvironment.AssertNoLinkEscape(Path.GetPathRoot(root)!, root);
+            if (!Directory.Exists(root) && readOnly) return null;
             Directory.CreateDirectory(root);
-            ProductionLocalEnvironment.AssertNoLinkEscape(root, root);
+            ProductionLocalEnvironment.AssertNoLinkEscape(Path.GetPathRoot(root)!, root);
             var identity = Convert.ToHexStringLower(SHA256.HashData(CanonicalJson.Serialize(
                 JsonSerializer.SerializeToNode(receipts)!)));
             var destination = ProductionLocalEnvironment.ResolveUnderRoot(root, identity, false);
@@ -107,8 +111,9 @@ internal static class LtxRoughCutAssembly
             if (Directory.Exists(destination))
             {
                 await VerifyExistingAsync(root, destination, manifest, probe, ct).ConfigureAwait(false);
-                return;
+                return Path.Combine(destination, "rough-cut.mp4");
             }
+            if (readOnly) return null;
             var staging = Path.Combine(root, "." + identity + "." + Guid.NewGuid().ToString("N") + ".partial");
             Directory.CreateDirectory(staging);
             try
@@ -128,6 +133,7 @@ internal static class LtxRoughCutAssembly
                 // 04. Publish video and receipt together. Existing output is
                 //     never overwritten, and incomplete staging is not deliverable.
                 Directory.Move(staging, destination);
+                return Path.Combine(destination, "rough-cut.mp4");
             }
             finally { if (Directory.Exists(staging)) Directory.Delete(staging, true); }
         }
