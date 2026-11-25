@@ -8,6 +8,7 @@ using PicotooPet.Desktop.Core.Logging;
 using PicotooPet.Desktop.Core.Security;
 using PicotooPet.Desktop.Core.State;
 using PicotooPet.Desktop.Core.Contracts;
+using PicotooPet.Desktop.Services.ProductionReference;
 
 namespace PicotooPet.Desktop.Services;
 
@@ -127,6 +128,35 @@ public static class P0MediaWorkerHost
                         }
                         else
                         {
+                        // 01. Explicit LTX pilot takes the same exclusive scheduling
+                        //     slot as Wan. Never route a v1.2 job to the Wan parser.
+                        var ltxJobs = await session.GetProductionJobsAsync(cancellationToken).ConfigureAwait(false);
+                        var ltxJob = ltxJobs.FirstOrDefault(job => LtxProductionExecutor.IsSelected(job)
+                            && P0ThreeShotAcceptanceGate.HasExplicitAllowFor(job.ProductionJobId));
+                        if (ltxJob is not null)
+                        {
+                            if (stopSignal.WaitOne(0)) break;
+                            if (!backoff.TryGetValue(ltxJob.ProductionJobId, out var ltxAfter)
+                                || ltxAfter <= DateTimeOffset.UtcNow)
+                            {
+                                try
+                                {
+                                    await LtxProductionExecutor.RunAsync(session, ltxJob, journal, cancellationToken)
+                                        .ConfigureAwait(false);
+                                    backoff.Remove(ltxJob.ProductionJobId);
+                                }
+                                catch (Exception) when (!cancellationToken.IsCancellationRequested)
+                                {
+                                    // 02. Do not log vendor data or credentials. Any
+                                    //     uncertain reservation remains in the shared journal.
+                                    logger.Info("LTX_PILOT_PAUSED; pending journal retained");
+                                    backoff[ltxJob.ProductionJobId] = DateTimeOffset.UtcNow + FailureBackoff;
+                                }
+                            }
+                            // 03. A selected LTX slot cannot fall through into Wan.
+                            await Task.Delay(PollInterval, cancellationToken).ConfigureAwait(false);
+                            continue;
+                        }
                         var goals = await session.GetGoalsAsync(cancellationToken).ConfigureAwait(false);
                         foreach (var goal in goals)
                         {

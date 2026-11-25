@@ -817,12 +817,27 @@ internal sealed class CoreWorkerChallengeClient : IDisposable
         }
     }
 
-    private async Task<JsonDocument> PostAsync(string route, object payload, HttpStatusCode expected, CancellationToken ct)
+    // 01. Historical frozen plan readback uses the same paired session.
+    internal async Task<JsonElement> GetLtxPlanAsync(string jobId, CancellationToken ct)
+    {
+        if (!Guid.TryParseExact(jobId, "D", out _)) throw Invalid("LTX_PLAN_JOB_INVALID");
+        using var result = await RequestAsync(HttpMethod.Get,
+            "api/v1/production/jobs/" + Uri.EscapeDataString(jobId) + "/ltx-plan",
+            null, HttpStatusCode.OK, ct).ConfigureAwait(false);
+        return result.RootElement.Clone();
+    }
+
+    private Task<JsonDocument> PostAsync(string route, object payload, HttpStatusCode expected, CancellationToken ct) =>
+        RequestAsync(HttpMethod.Post, route, payload, expected, ct);
+
+    private async Task<JsonDocument> RequestAsync(HttpMethod method, string route, object? payload,
+        HttpStatusCode expected, CancellationToken ct)
     {
         _requireCurrentSession();
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
         deadline.CancelAfter(TimeSpan.FromSeconds(10));
-        using var request = new HttpRequestMessage(HttpMethod.Post, route) { Content = JsonContent.Create(payload) };
+        using var request = new HttpRequestMessage(method, route);
+        if (payload is not null) request.Content = JsonContent.Create(payload);
         using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadline.Token).ConfigureAwait(false);
         if (response.StatusCode != expected) throw Invalid("CORE_CHALLENGE_OR_PREFLIGHT_UNEXPECTED_STATUS");
         if (response.Content.Headers.ContentType?.MediaType != "application/json" || response.Content.Headers.ContentLength > 16384)
