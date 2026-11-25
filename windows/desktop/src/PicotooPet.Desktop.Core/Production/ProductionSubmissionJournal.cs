@@ -42,7 +42,20 @@ public sealed class ProductionSubmissionJournal
         if (!Path.IsPathFullyQualified(root)) throw new ProductionWorkerException("MEDIA_JOURNAL_INVALID");
         _root = Path.GetFullPath(root);
     }
-    public GpuLease AcquireGpu() => new(this, Acquire("gpu.lock"));
+    public GpuLease AcquireGpu()
+    {
+        var file = Acquire("gpu.lock");
+        // 01. A stopped/uncertain creative draft runner must not be bypassed
+        //     by a later production claim, even if its OS handle was released.
+        try
+        {
+            var marker = Path.Combine(_root, "flux-draft-in-progress.json");
+            if (File.Exists(marker) || Directory.Exists(marker))
+                throw new ProductionWorkerException("MEDIA_FLUX_DRAFT_RECONCILIATION_REQUIRED");
+            return new(this, file);
+        }
+        catch { file.Dispose(); throw; }
+    }
     /// <summary>Evidence of the actual held file lock, scoped to this journal instance.</summary>
     public sealed class GpuLease : IDisposable
     {

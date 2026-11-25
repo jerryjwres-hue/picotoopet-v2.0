@@ -49,7 +49,7 @@ internal static class P0ThreeShotAcceptanceGate
             return one is null ? null : new(one, null);
         }
         if (gate.Mode != Mode.AllowLtxBatch || gate.Batch is null) return null;
-        var jobs = await ReadBatchAsync(session, gate, ct, false).ConfigureAwait(false);
+        var jobs = await ReadBatchAsync(session, gate, false, ct).ConfigureAwait(false);
         if (jobs is null) return null;
         // 04. All settled candidates unlock CPU assembly only.
         if (jobs.All(LtxProductionExecutor.IsCandidateSettled))
@@ -62,11 +62,11 @@ internal static class P0ThreeShotAcceptanceGate
         ControlCenterSession session, CancellationToken ct)
     {
         var gate = Read();
-        return await ReadBatchAsync(session, gate, ct, true).ConfigureAwait(false);
+        return await ReadBatchAsync(session, gate, true, ct).ConfigureAwait(false);
     }
 
     private static async Task<IReadOnlyList<ProductionJobRecord>?> ReadBatchAsync(
-        ControlCenterSession session, Snapshot gate, CancellationToken ct, bool includeRendering)
+        ControlCenterSession session, Snapshot gate, bool includeRendering, CancellationToken ct)
     {
         if (gate.Mode != Mode.AllowLtxBatch || gate.Batch is null) return null;
         using var core = session.CreateWorkerChallengePreflightClient();

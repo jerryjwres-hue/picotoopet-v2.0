@@ -229,6 +229,28 @@ class ExistingFluxBoardHandoffTests(unittest.TestCase):
         jobs = (self.root / "batch" / "flux_board_jobs.json").read_bytes()
         self.assertEqual(_sha(jobs), batch["runner_jobs_sha256"])
         self.assertEqual(len(json.loads(jobs)["jobs"]), 3)
+        # 01a. Execution staging reuses exact source bytes and prepared refs.
+        #      No GPU, legacy process, port or Windows lock is invoked in CI.
+        from run_existing_flux_board_batch import stage_inputs
+        stage = self.root / "execution"
+        stage.mkdir()
+        inputs = self.root / "comfy-input"
+        inputs.mkdir()
+        staged = stage_inputs(batch_dir=self.root / "batch", runner=self.runner,
+                              stage=stage, comfy_input=inputs)
+        self.assertEqual(staged, batch)
+        self.assertEqual((stage / "run_flux_board.py").read_bytes(), self.runner.read_bytes())
+        self.assertEqual((stage / "flux_board_jobs.json").read_bytes(), jobs)
+        self.assertEqual((stage / "refs_real" / self.character.name).read_bytes(), self.character.read_bytes())
+        # 02a. Reject differing pre-existing basename instead of overwriting it.
+        (inputs / ("PTV2_" + self.character.name)).write_bytes(b"unrelated")
+        denied = self.root / "execution-denied"
+        denied.mkdir()
+        with self.assertRaisesRegex(ValueError, "FLUX_DRAFT_COMFY_INPUT_COLLISION"):
+            stage_inputs(batch_dir=self.root / "batch", runner=self.runner,
+                         stage=denied, comfy_input=inputs)
+        self.assertFalse((denied / "run_flux_board.py").exists())
+        self.assertEqual((inputs / ("PTV2_" + self.character.name)).read_bytes(), b"unrelated")
         self.assertEqual(json.loads(jobs)["out"], batch["runner_output_directory"])
         for record in batch["shots"]:
             folder = self.root / "batch" / record["relative_directory"]
