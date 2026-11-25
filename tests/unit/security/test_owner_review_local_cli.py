@@ -219,3 +219,17 @@ def test_required_field_paths_match_core():
     assert tuple(cli.REQUIRED_FIELD_PATHS) == core._REQUIRED_FIELD_PATHS
     assert json.dumps(cli.DYNAMIC_PET_POLICY) == json.dumps(
         __import__("picotoopet_core.creative.dynamic_pet_story", fromlist=["x"]).DYNAMIC_PET_POLICY)
+
+
+def test_every_request_path_exists_in_the_core_openapi_contract():
+    """Regression 2026-11-25: real Mac returned 404 because /api/v1 was missing."""
+
+    openapi = json.loads((SCRIPT.parents[3] / "contracts" / "openapi" / "mac_core_v1.openapi.json")
+                         .read_text(encoding="utf-8"))
+    templates = {path.replace("{goal_id}", GOAL) for path in openapi["paths"]}
+    api = FakeApi(_proposal())
+    cli.review(goal_id=GOAL, base_url="http://127.0.0.1:8766", credential_id="owner-maotai-1",
+               keychain=_keychain_with_token(), http=api,
+               ask=_answers("u", "n", "确认提交"), out=io.StringIO())
+    used = {url.split("http://127.0.0.1:8766", 1)[1] for _, url, _, _ in api.calls}
+    assert len(used) == 3 and used <= templates

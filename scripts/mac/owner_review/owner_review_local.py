@@ -58,6 +58,7 @@ CONFIRM_PHRASE = "确认提交"
 KEYCHAIN_PREFIX = "PicotooPetV2.OwnerReview."
 DEFAULT_REGISTRY = "~/Library/Application Support/PicotooPetV2/owner-review-registry.json"
 DEFAULT_BASE_URL = "http://127.0.0.1:8765"
+API_PREFIX = "/api/v1"  # every Core router is mounted under this prefix
 
 _SUBJECT = re.compile(r"^pet:[a-z0-9][a-z0-9-]{1,63}$")
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$")
@@ -173,7 +174,7 @@ def _loopback_base(base_url: str) -> str:
             or parts.query or parts.fragment or parts.port is None):
         _fail("OWNER_REVIEW_LOOPBACK_URL_REQUIRED")
     host = "[::1]" if parts.hostname == "::1" else "127.0.0.1"
-    return "http://{0}:{1}".format(host, parts.port)
+    return "http://{0}:{1}{2}".format(host, parts.port, API_PREFIX)
 
 
 def urllib_http(method: str, url: str, body: Optional[Dict[str, Any]],

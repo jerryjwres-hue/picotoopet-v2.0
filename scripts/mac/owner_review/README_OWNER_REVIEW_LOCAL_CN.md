@@ -35,7 +35,7 @@ launchctl bootstrap gui/$(id -u) "$PLIST"
 
 ```bash
 /usr/bin/python3 scripts/mac/owner_review/owner_review_local.py review \
-  --goal-id <goal_id> --credential-id owner-maotai-1 [--base-url http://127.0.0.1:8765]
+  --goal-id <goal_id> --credential-id owner-maotai-1 [--base-url http://127.0.0.1:<Core 端口，如 8766>]
 ```
 
 - `EXPLICIT` 字段（有来源证据）默认确认；`UNKNOWN/CONFLICT` 字段逐个选择：更正（输入 JSON 值）或保持未知。
