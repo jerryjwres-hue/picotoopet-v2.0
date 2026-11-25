@@ -60,6 +60,15 @@ internal static class PolicyTests
         Reject("RUNTIME_MISMATCH", () => FinalVideoQaMediaProbe.ValidateLtxCandidate(ltx, 90));
         Reject("OUTPUT_PROFILE_MISMATCH", () => FinalVideoQaMediaProbe.ValidateLtxCandidate(
             ltx with { Video = ltx.Video with { FpsNumerator = 25 } }, 96));
+        // 02. Native rough-cut output keeps 720p without modifying final-film QA.
+        var rough = ltx with { Video = ltx.Video with { DurationUs = 12_000_000, PacketCount = 288 },
+            FormatDurationUs = 12_000_000 };
+        FinalVideoQaMediaProbe.ValidateLtxRoughCut(rough);
+        Reject("OUTPUT_PROFILE_MISMATCH", () => FinalVideoQaMediaProbe.Validate(rough, "video.vertical.v1", false, 288, 12000));
+        Reject("RUNTIME_MISMATCH", () => FinalVideoQaMediaProbe.ValidateLtxRoughCut(
+            rough with { Video = rough.Video with { PacketCount = 287 } }));
+        Reject("AUDIO_STREAM_INVALID", () => FinalVideoQaMediaProbe.ValidateLtxRoughCut(
+            rough with { Audio = new(1, "aac", "LC", 48000, 1, "mono", 12_000_000), StreamCount = 2 }));
         Console.WriteLine("QA_BOUNDARIES=PASS");
     }
     private static void Reject(string error, Action action)

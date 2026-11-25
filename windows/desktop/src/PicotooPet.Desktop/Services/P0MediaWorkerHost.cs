@@ -82,6 +82,8 @@ public static class P0MediaWorkerHost
                     journal, reconciler, session.GetProductionJobAsync);
                 var backoff = new System.Collections.Generic.Dictionary<string, DateTimeOffset>(
                     StringComparer.Ordinal);
+                // 01. Avoid reassembling a verified immutable rough cut every poll.
+                var assembledLtxBatches = new HashSet<string>(StringComparer.Ordinal);
                 var connected = false;
                 var explicitStop = false;
                 while (!cancellationToken.IsCancellationRequested && !explicitStop)
@@ -135,8 +137,35 @@ public static class P0MediaWorkerHost
                             session, ltxJobs, cancellationToken).ConfigureAwait(false);
                         if (ltxSelection is not null)
                         {
-                            var ltxJob = ltxSelection.Job;
                             if (stopSignal.WaitOne(0)) break;
+                            // 01. Candidate assembly uses the same authenticated session
+                            //     and the existing FFmpeg/QA primitives, no new GPU work.
+                            if (ltxSelection.SettledJobs is { Count: 3 } completed
+                                && ltxSelection.BatchIdentity is string batchId)
+                            {
+                                if (!assembledLtxBatches.Contains(batchId)
+                                    && (!backoff.TryGetValue(batchId, out var assembleAfter)
+                                        || assembleAfter <= DateTimeOffset.UtcNow))
+                                {
+                                    try
+                                    {
+                                        await LtxRoughCutAssembly.AssembleAsync(session, completed, batchId,
+                                            cancellationToken).ConfigureAwait(false);
+                                        assembledLtxBatches.Add(batchId);
+                                        backoff.Remove(batchId);
+                                        logger.Info("LTX_ROUGH_CUT_READY; VISUAL_REVIEW_REQUIRED");
+                                    }
+                                    catch (Exception) when (!cancellationToken.IsCancellationRequested)
+                                    {
+                                        logger.Info("LTX_ROUGH_CUT_PAUSED; source candidates retained");
+                                        backoff[batchId] = DateTimeOffset.UtcNow + FailureBackoff;
+                                    }
+                                }
+                                await Task.Delay(PollInterval, cancellationToken).ConfigureAwait(false);
+                                continue;
+                            }
+                            var ltxJob = ltxSelection.Job
+                                ?? throw new InvalidDataException("LTX_SELECTION_INVALID");
                             if (!backoff.TryGetValue(ltxJob.ProductionJobId, out var ltxAfter)
                                 || ltxAfter <= DateTimeOffset.UtcNow)
                             {

@@ -18,6 +18,16 @@ public sealed class FinalVideoQaMediaProbe
 
     internal async Task<FinalQaObservedMedia> VerifyAsync(string path, string profile, bool narration,
         long frames, long targetMs, CancellationToken ct)
+        => await VerifyMediaAsync(path, profile, narration, frames, targetMs, false, ct).ConfigureAwait(false);
+
+    // 01. Native portrait rough-cut verification is deliberately separate
+    //     from the published film profile. Never widen legacy final QA.
+    internal async Task VerifyLtxRoughCutAsync(string path, CancellationToken ct)
+        => _ = await VerifyMediaAsync(path, "video.vertical.v1", false, 288, 12000, true, ct)
+            .ConfigureAwait(false);
+
+    private async Task<FinalQaObservedMedia> VerifyMediaAsync(string path, string profile, bool narration,
+        long frames, long targetMs, bool roughCut, CancellationToken ct)
     {
         var probe = Start("ffprobe.exe", path,
             ["-v", "error", "-count_packets", "-show_entries",
@@ -25,11 +35,19 @@ public sealed class FinalVideoQaMediaProbe
              "-of", "json", path]);
         var result = await RunAsync(probe, TimeSpan.FromSeconds(30), "PROBE_FAILED", ct).ConfigureAwait(false);
         var facts = Parse(result.Stdout);
-        Validate(facts, profile, narration, frames, targetMs);
-        var args = new List<string> { "-hide_banner", "-loglevel", "error", "-nostdin", "-xerror", "-i", path, "-map", "0:v:0" };
+        if (roughCut)
+        {
+            if (result.CleanupIncomplete) throw new FinalVideoQaException("PROBE_FAILED");
+            ValidateLtxRoughCut(facts);
+        }
+        else Validate(facts, profile, narration, frames, targetMs);
+        var args = new List<string> { "-hide_banner", "-loglevel", "error", "-nostdin", "-xerror" };
+        if (roughCut) args.AddRange(["-protocol_whitelist", "file"]);
+        args.AddRange(["-i", path, "-map", "0:v:0"]);
         if (narration) args.AddRange(["-map", "0:a:0"]);
         args.AddRange(["-f", "null", "-"]);
-        await RunAsync(Start("ffmpeg.exe", path, args), TimeSpan.FromMinutes(2), "DECODE_FAILED", ct).ConfigureAwait(false);
+        var decoded = await RunAsync(Start("ffmpeg.exe", path, args), TimeSpan.FromMinutes(2), "DECODE_FAILED", ct).ConfigureAwait(false);
+        if (roughCut && decoded.CleanupIncomplete) throw new FinalVideoQaException("DECODE_FAILED");
         return facts;
     }
 
@@ -218,6 +236,20 @@ public sealed class FinalVideoQaMediaProbe
     public static void Validate(FinalQaObservedMedia facts, string profile, bool narration, long frames, long targetMs)
     {
         var (width, height) = Dimensions(profile);
+        ValidateDimensions(facts, width, height, narration, frames, targetMs);
+    }
+
+    internal static void ValidateLtxRoughCut(FinalQaObservedMedia facts)
+    {
+        // 02. Exactly three four-second shots, no vendor audio or final PASS.
+        ValidateDimensions(facts, 720, 1280, false, 288, 12000);
+        if (facts.Video.PacketCount != 288 || facts.Video.DurationUs != 12_000_000)
+            throw new FinalVideoQaException("RUNTIME_MISMATCH");
+    }
+
+    private static void ValidateDimensions(FinalQaObservedMedia facts, int width, int height,
+        bool narration, long frames, long targetMs)
+    {
         var video = facts.Video;
         if (facts.ContainerFamily != "mp4" || facts.FormatDurationUs <= 0) throw new FinalVideoQaException("CONTAINER_INVALID");
         if (video.Index != 0 || video.CodecName != "h264" || video.PixelFormat != "yuv420p"

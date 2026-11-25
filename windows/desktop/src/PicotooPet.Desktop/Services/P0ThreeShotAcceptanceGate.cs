@@ -24,7 +24,8 @@ internal static class P0ThreeShotAcceptanceGate
         public string? BatchIdentity => Batch is null ? null : ProductionSubmissionJournal.Hash(
             string.Join("\n", Batch.Select(item => item.JobId + ":" + item.PlanDigest)));
     }
-    internal sealed record LtxSelection(ProductionJobRecord Job, string? BatchIdentity);
+    internal sealed record LtxSelection(ProductionJobRecord? Job, string? BatchIdentity,
+        IReadOnlyList<ProductionJobRecord>? SettledJobs = null);
 
     // Candidate lookup only; execution still rechecks the Plan and retains
     // the exact existing permit. Unattended never selects a B pilot.
@@ -76,6 +77,10 @@ internal static class P0ThreeShotAcceptanceGate
             jobs.Add(job);
             refs.Add(reference);
         }
+        // 04. All three candidate settlements unlock only CPU rough-cut
+        //     assembly, not visual approval or a legacy PASS package.
+        if (jobs.All(LtxProductionExecutor.IsCandidateSettled))
+            return new(null, gate.BatchIdentity, jobs.AsReadOnly());
         var next = NextLtxBatchJob(jobs);
         return next is null ? null : new(next, gate.BatchIdentity);
     }
