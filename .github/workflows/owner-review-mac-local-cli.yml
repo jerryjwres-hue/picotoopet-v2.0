@@ -1,0 +1,50 @@
+name: Owner Review Mac-local CLI
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/owner-review-mac-local-cli.yml"
+      - "scripts/mac/owner_review/**"
+      - "tests/unit/security/test_owner_review_local_cli.py"
+      - "src/picotoopet_core/autonomous/owner_structured_review.py"
+      - "src/picotoopet_core/security/owner_principal.py"
+      - "src/picotoopet_core/creative/dynamic_pet_story.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  owner-review-local:
+    name: Owner review CLI contracts (macos-15, no secrets, no network)
+    runs-on: macos-15
+    timeout-minutes: 20
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install project and test dependencies
+        run: |
+          python -m pip install -e . pytest==9.1.1 pytest-asyncio==1.4.0
+      - name: Contract tests against the real Core request models
+        run: PYTHONPATH=.:src python -m pytest -q tests/unit/security/test_owner_review_local_cli.py
+      - name: Runs under the macOS system Python and fails closed without a Keychain secret
+        shell: bash
+        run: |
+          /usr/bin/python3 --version
+          /usr/bin/python3 scripts/mac/owner_review/owner_review_local.py --help >/dev/null
+          set +e
+          out=$(/usr/bin/python3 scripts/mac/owner_review/owner_review_local.py review \
+                  --goal-id goal-ci --credential-id ci-missing 2>&1)
+          code=$?
+          set -e
+          echo "$out"
+          test "$code" -ne 0
+          echo "$out" | grep -q OWNER_REVIEW_KEYCHAIN_SECRET_MISSING
+          out=$(/usr/bin/python3 scripts/mac/owner_review/owner_review_local.py review \
+                  --goal-id goal-ci --credential-id ci-missing --base-url http://192.168.1.2:8765 2>&1 || true)
+          echo "$out" | grep -q OWNER_REVIEW_LOOPBACK_URL_REQUIRED
