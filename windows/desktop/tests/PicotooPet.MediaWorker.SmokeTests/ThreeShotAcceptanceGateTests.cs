@@ -110,6 +110,24 @@ internal static class ThreeShotAcceptanceGateTests
             "unresolved predecessor must hold batch");
         RecoveryTests.Assert(P0ThreeShotAcceptanceGate.NextLtxBatchJob([jobs[0], jobs[1] with { FailureCode = "LTX_PILOT_REVIEW_REQUIRED" }, jobs[2]]) is null,
             "out-of-order settlement must hold batch");
+        // 04. Exercise the actual desktop writer from an explicit HOLD;
+        //     an existing unrelated allow cannot be replaced by this action.
+        File.WriteAllText(path, "{\"schema_version\":\"1.0\",\"mode\":\"hold\"}");
+        P0ThreeShotAcceptanceGate.ArmReviewedLtxJobsAtPath(jobs, path);
+        P0ThreeShotAcceptanceGate.ArmReviewedLtxJobsAtPath(jobs, path); // exact retry
+        using (var permit = P0ThreeShotAcceptanceGate.AcquireLtxSubmissionPermitAtPath(ids[0], digests[0], identity, path))
+        {
+            var blocked = false;
+            try { P0ThreeShotAcceptanceGate.ArmReviewedLtxJobsAtPath(jobs, path); }
+            catch (IOException) { blocked = true; }
+            RecoveryTests.Assert(blocked, "active GPU permit must prevent writer access");
+        }
+        try
+        {
+            P0ThreeShotAcceptanceGate.ArmReviewedLtxJobsAtPath([jobs[0]], path);
+            throw new InvalidOperationException("different ALLOW overwritten");
+        }
+        catch (ProductionWorkerException error) when (error.Code == "LTX_OPERATOR_HOLD_REQUIRED") { }
         File.Delete(path);
         Reject(ids[0], digests[0], identity);
         Console.WriteLine("LTX_ORDERED_BATCH_GATE=PASS; GPU_POST=0");

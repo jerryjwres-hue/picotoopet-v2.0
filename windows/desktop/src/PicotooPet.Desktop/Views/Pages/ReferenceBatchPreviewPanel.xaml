@@ -187,6 +187,10 @@
    <Button x:Name="CreateReviewedPlanButton" Content="{Binding ReviewedPlanLabel, FallbackValue=创建已审核生产计划}"
            HorizontalAlignment="Left" Padding="12,7" Margin="0,0,0,8"
            IsEnabled="{Binding CanCreateReviewedPlan, FallbackValue=False}" Click="CreateReviewedPlan_Click" />
+   <!-- 01. Explicit operator release; creating or refreshing a plan cannot call this. -->
+   <Button x:Name="ArmReviewedLtxJobsButton" Content="放行已冻结的 LTX 镜头（使用本地 GPU）"
+           HorizontalAlignment="Left" Padding="12,7" Margin="0,0,0,8"
+           IsEnabled="{Binding CanArmReviewedLtxJobs, FallbackValue=False}" Click="ArmReviewedLtxJobs_Click"/>
    <TextBlock Text="{Binding CreatedProductionJob.ProductionJobId, StringFormat=首个生产 Job：{0}}" TextWrapping="Wrap" />
    <!-- 01. Show every verified held LTX job in frozen shot order. -->
    <ItemsControl ItemsSource="{Binding CreatedLtxJobs}">

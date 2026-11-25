@@ -34,6 +34,9 @@ public sealed partial class ControlCenterSession : IReviewedThreeShotPlanGateway
             cancellationToken, selectedShotId).ConfigureAwait(false);
     }
 
+    public Task<ProductionJobRecord> ReadReviewedLtxJobAsync(string jobId, CancellationToken cancellationToken)
+        => GetProductionJobAsync(jobId, cancellationToken);
+
     public async Task<System.Text.Json.JsonElement> ReadReviewedLtxPlanAsync(string jobId, CancellationToken cancellationToken)
     {
         using var client = CreateWorkerChallengePreflightClient();

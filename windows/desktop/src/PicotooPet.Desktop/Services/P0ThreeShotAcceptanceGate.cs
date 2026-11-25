@@ -172,7 +172,75 @@ internal static class P0ThreeShotAcceptanceGate
     internal static IDisposable? AcquireSubmissionPermit(string jobId, string planDigest) =>
         AcquireSubmissionPermitAtPath(jobId, planDigest, DefaultPath);
 
-    // 04. LTX alone may consume a batch permit. Legacy Wan permits below
+    // 04. Only a deliberate desktop action may arm the existing local gate.
+    //     Keep the shared GPU lock and pending journal boundary unchanged.
+    internal static void ArmReviewedLtxJobs(IReadOnlyList<ProductionJobRecord> jobs)
+    {
+        var journal = new ProductionSubmissionJournal(ProductionSubmissionJournal.DefaultRoot);
+        using var gpu = journal.AcquireGpu();
+        if (journal.Pending().Count != 0)
+            throw new ProductionWorkerException("MEDIA_PENDING_RECONCILIATION");
+        ArmReviewedLtxJobsAtPath(jobs, DefaultPath);
+    }
+
+    internal static void ArmReviewedLtxJobsAtPath(IReadOnlyList<ProductionJobRecord> jobs, string path)
+    {
+        // 05. This method writes only the narrow exact operator permit.
+        //     It cannot register references, claim leases or issue media POST.
+        if (jobs.Count is not (1 or 3) || jobs.Any(job => !LtxProductionExecutor.IsSelected(job)
+            || !ValidJobId(job.ProductionJobId) || !ValidDigest(job.PlanDigest))
+            || jobs.Select(job => job.ProductionJobId).Distinct(StringComparer.Ordinal).Count() != jobs.Count
+            || jobs.Select(job => job.PlanDigest).Distinct(StringComparer.Ordinal).Count() != jobs.Count
+            || jobs.Any(job => job.CreativePackageId != jobs[0].CreativePackageId
+                || job.CreativePackageDigest != jobs[0].CreativePackageDigest || job.ProjectKey != jobs[0].ProjectKey))
+            throw new ProductionWorkerException("LTX_OPERATOR_BATCH_INVALID");
+        var raw = jobs.Count == 1
+            ? JsonSerializer.SerializeToUtf8Bytes(new { schema_version = "1.0", mode = "allow",
+                production_job_id = jobs[0].ProductionJobId, plan_digest = jobs[0].PlanDigest })
+            : JsonSerializer.SerializeToUtf8Bytes(new { schema_version = "1.1", mode = "allow_ltx_batch",
+                jobs = jobs.Select(job => new { production_job_id = job.ProductionJobId, plan_digest = job.PlanDigest }) });
+        if (raw.Length > 1024) throw new ProductionWorkerException("LTX_OPERATOR_BATCH_INVALID");
+
+        // 06. Existing valid HOLD is the only writable starting mode.
+        //     A different ALLOW or corrupt/missing armed file must not be
+        //     silently overwritten. FileShare.None protects the pinned POST.
+        for (DirectoryInfo? current = new(Path.GetDirectoryName(path)!);
+            current is not null; current = current.Parent)
+            if (current.Exists && (current.Attributes & FileAttributes.ReparsePoint) != 0)
+                throw new IOException("P0_ACCEPTANCE_PATH_INVALID");
+        if (!File.Exists(path) || (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+            throw new ProductionWorkerException("LTX_OPERATOR_HOLD_REQUIRED");
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None,
+            bufferSize: 4096, options: FileOptions.WriteThrough);
+        if (stream.Length is <= 0 or > 1024)
+            throw new ProductionWorkerException("LTX_OPERATOR_HOLD_REQUIRED");
+        var prior = new byte[(int)stream.Length];
+        stream.ReadExactly(prior);
+        if (prior.AsSpan().SequenceEqual(raw)) return;
+        using var currentDocument = JsonDocument.Parse(prior);
+        var currentRoot = currentDocument.RootElement;
+        if (currentRoot.ValueKind != JsonValueKind.Object || currentRoot.EnumerateObject().Count() != 2
+            || !currentRoot.TryGetProperty("schema_version", out var version) || version.ValueKind != JsonValueKind.String
+            || version.GetString() != "1.0" || !currentRoot.TryGetProperty("mode", out var mode)
+            || mode.ValueKind != JsonValueKind.String || mode.GetString() != "hold")
+            throw new ProductionWorkerException("LTX_OPERATOR_HOLD_REQUIRED");
+        var markerPath = path + ".armed";
+        if (!MarkerExists(markerPath))
+        {
+            using var marker = new FileStream(markerPath, FileMode.CreateNew, FileAccess.Write,
+                FileShare.Read, 8, FileOptions.WriteThrough);
+            marker.WriteByte(1);
+            marker.Flush(flushToDisk: true);
+        }
+        // 07. A crash during exclusive write leaves invalid JSON (HOLD).
+        //     The durable armed marker prevents deletion from enabling work.
+        stream.Position = 0;
+        stream.SetLength(0);
+        stream.Write(raw);
+        stream.Flush(flushToDisk: true);
+    }
+
+    // 08. LTX alone may consume a batch permit. Legacy Wan permits below
     //     cannot use batch entries, and missing config never authorizes LTX.
     internal static IDisposable AcquireLtxSubmissionPermit(string jobId, string planDigest, string? batchIdentity) =>
         AcquireLtxSubmissionPermitAtPath(jobId, planDigest, batchIdentity, DefaultPath);

@@ -24,6 +24,7 @@ public interface IReviewedLtxPilotGateway : IReferenceBatchGateway
         string approvalId, string idempotencyKey, CancellationToken cancellationToken,
         string? selectedShotId = null);
     Task<System.Text.Json.JsonElement> ReadReviewedLtxPlanAsync(string jobId, CancellationToken cancellationToken);
+    Task<ProductionJobRecord> ReadReviewedLtxJobAsync(string jobId, CancellationToken cancellationToken);
 }
 
 public sealed partial class MacCoreClient : IReferenceBatchGateway

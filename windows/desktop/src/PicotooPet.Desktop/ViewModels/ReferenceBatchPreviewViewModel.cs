@@ -224,6 +224,10 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
         private set => SetProperty(ref _createdProductionJob, value);
     }
     public IReadOnlyList<ProductionJobRecord> CreatedLtxJobs { get; private set; } = Array.Empty<ProductionJobRecord>();
+    // 01. Plan creation and the explicit GPU operator action remain separate.
+    public bool CanArmReviewedLtxJobs => !IsBusy && _portraitFluxCandidate
+        && _gateway is IReviewedLtxPilotGateway && CreatedLtxJobs.Count is 1 or 3
+        && Receipt is { Status: "Approved" } receipt && receipt.ExpiresAt > DateTimeOffset.UtcNow;
     public string ReviewedPlanLabel => _portraitFluxCandidate
         ? "冻结已审核的 LTX 计划（首镜头或完整三镜头，不启动 GPU）"
         : "创建已审核的三镜头生产计划（不启动 GPU）";
@@ -1008,6 +1012,66 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
         finally { Exit(); }
     }
 
+    // 01. Recheck the live Owner decision and every previously verified plan.
+    //     The local gate is the sole write; the background Worker still owns
+    //     claim, signature, GPU lock, vendor submission and candidate recovery.
+    public async Task ArmReviewedLtxJobsAsync(CancellationToken ct = default)
+    {
+        if (!CanArmReviewedLtxJobs || _gateway is not IReviewedLtxPilotGateway production)
+            throw new InvalidDataException("REFERENCE_LTX_OPERATOR_CONTEXT_INVALID");
+        var request = _frozenRequest ?? throw new InvalidDataException("REFERENCE_REQUEST_REQUIRED");
+        var initial = _initialReceipt ?? throw new InvalidDataException("REFERENCE_RECEIPT_REQUIRED");
+        if (!Enter()) return;
+        try
+        {
+            await VerifySnapshotsAsync(request, ct);
+            var fresh = await ReadBoundReceiptAsync(request, initial, ct);
+            Receipt = fresh;
+            if (fresh.Status != "Approved" || fresh.ExpiresAt <= DateTimeOffset.UtcNow
+                || fresh.RightsScope != ReferenceBatchValidation.LtxRightsScope
+                || fresh.References.Length != CreatedLtxJobs.Count
+                || !LtxCoverage(fresh.References.Select(x => x.ShotId)))
+                throw new InvalidDataException("REFERENCE_LTX_APPROVAL_NOT_CURRENT");
+            var selected = fresh.References.OrderBy(x => Array.IndexOf(EligibleShots, x.ShotId)).ToArray();
+            var verified = new List<ProductionJobRecord>();
+            for (var index = 0; index < CreatedLtxJobs.Count; index++)
+            {
+                var expected = CreatedLtxJobs[index];
+                var job = await production.ReadReviewedLtxJobAsync(expected.ProductionJobId, ct);
+                if (job.ProductionJobId != expected.ProductionJobId || job.PlanDigest != expected.PlanDigest
+                    || job.IdempotencyKey != expected.IdempotencyKey
+                    || job.CreativePackageId != CreativePackageId || job.CreativePackageDigest != CreativePackageDigest
+                    || job.ProjectKey != "goal-" + GoalId)
+                    throw new InvalidDataException("REFERENCE_LTX_JOB_MISMATCH");
+                var plan = await production.ReadReviewedLtxPlanAsync(job.ProductionJobId, ct);
+                var bound = Services.ProductionReference.LtxProductionExecutor.ValidatePlan(job, plan);
+                var reference = selected[index];
+                if (bound.ApprovalId != fresh.ApprovalId || bound.ApprovalRequestDigest != fresh.ApprovalRequestDigest
+                    || bound.AssetId != reference.AssetId || bound.ShotId != reference.ShotId
+                    || bound.InputRelativePath != reference.InputRelativePath || bound.Sha256 != reference.Sha256
+                    || bound.Bytes != reference.Bytes || bound.SourceReference != reference.SourceReference
+                    || bound.SourceDigest != reference.SourceDigest)
+                    throw new InvalidDataException("REFERENCE_LTX_PLAN_REFERENCE_MISMATCH");
+                verified.Add(job);
+            }
+            // 02. Last read before local operator authorization; a later
+            //     revoke still denies the actual signed Worker claim.
+            var current = await ReadBoundReceiptAsync(request, initial, ct);
+            Receipt = current;
+            if (current.Status != "Approved" || current.ExpiresAt <= DateTimeOffset.UtcNow)
+                throw new InvalidDataException("REFERENCE_LTX_APPROVAL_NOT_CURRENT");
+            ct.ThrowIfCancellationRequested();
+            P0ThreeShotAcceptanceGate.ArmReviewedLtxJobs(verified);
+            StatusText = $"已明确放行 {verified.Count} 个冻结 LTX 镜头；由既有 Worker 顺序执行，尚未确认渲染成功。";
+        }
+        catch
+        {
+            StatusText = "未确认放行。请检查既有 HOLD、审批、Worker 状态及待恢复任务；不会覆盖其他 ALLOW。";
+            throw;
+        }
+        finally { Exit(); }
+    }
+
     private async Task<ReferenceBatchReceipt> ReadBoundReceiptAsync(ReferenceBatchRequest request,
         ReferenceBatchReceipt initial, CancellationToken cancellationToken)
     {
@@ -1181,6 +1245,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
         RaisePropertyChanged(nameof(CanSubmit));
         RaisePropertyChanged(nameof(CanRefresh));
         RaisePropertyChanged(nameof(CanCreateReviewedPlan));
+        RaisePropertyChanged(nameof(CanArmReviewedLtxJobs));
     }
     private static string Text(JsonElement element, string property) => element.ValueKind == JsonValueKind.Object
         && element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString()! : string.Empty;

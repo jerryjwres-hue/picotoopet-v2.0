@@ -329,5 +329,17 @@ public partial class ReferenceBatchPreviewPanel : UserControl
         catch (Exception) { OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, vm.StatusText); }
     }
 
+    // 01. Explicit user action only. The confirmation describes the actual
+    //     GPU consequence; no local gate is changed from automatic refresh.
+    private async void ArmReviewedLtxJobs_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ReferenceBatchPreviewViewModel vm || !vm.CanArmReviewedLtxJobs) return;
+        if (System.Windows.MessageBox.Show(
+            $"放行这 {vm.CreatedLtxJobs.Count} 个已冻结镜头？运行中的本地 Worker 将使用 GPU 顺序生成；不会自动批准画面或成片。",
+            "确认本地 GPU 生产", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        try { await vm.ArmReviewedLtxJobsAsync(); }
+        catch (Exception) { OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, vm.StatusText); }
+    }
+
     private void OpenApprovals_Click(object sender, RoutedEventArgs e) => ApprovalsRequested?.Invoke(this, EventArgs.Empty);
 }
