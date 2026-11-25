@@ -49,7 +49,26 @@ internal static class P0ThreeShotAcceptanceGate
             return one is null ? null : new(one, null);
         }
         if (gate.Mode != Mode.AllowLtxBatch || gate.Batch is null) return null;
+        var jobs = await ReadBatchAsync(session, gate, ct, false).ConfigureAwait(false);
+        if (jobs is null) return null;
+        // 04. All settled candidates unlock CPU assembly only.
+        if (jobs.All(LtxProductionExecutor.IsCandidateSettled))
+            return new(null, gate.BatchIdentity, jobs);
+        var next = NextLtxBatchJob(jobs);
+        return next is null ? null : new(next, gate.BatchIdentity);
+    }
 
+    internal static async Task<IReadOnlyList<ProductionJobRecord>?> ReadActiveLtxBatchAsync(
+        ControlCenterSession session, CancellationToken ct)
+    {
+        var gate = Read();
+        return await ReadBatchAsync(session, gate, ct, true).ConfigureAwait(false);
+    }
+
+    private static async Task<IReadOnlyList<ProductionJobRecord>?> ReadBatchAsync(
+        ControlCenterSession session, Snapshot gate, CancellationToken ct, bool includeRendering)
+    {
+        if (gate.Mode != Mode.AllowLtxBatch || gate.Batch is null) return null;
         using var core = session.CreateWorkerChallengePreflightClient();
         var jobs = new List<ProductionJobRecord>();
         var refs = new List<ProductionReferenceAssetV11Record>();
@@ -57,10 +76,11 @@ internal static class P0ThreeShotAcceptanceGate
         {
             var job = await session.GetProductionJobAsync(entry.JobId, ct).ConfigureAwait(false);
             if (job.ProductionJobId != entry.JobId || job.PlanDigest != entry.PlanDigest
-                || (!LtxProductionExecutor.IsSelected(job) && !LtxProductionExecutor.IsCandidateSettled(job)))
+                || (!LtxProductionExecutor.IsSelected(job) && !LtxProductionExecutor.IsCandidateSettled(job)
+                    && !(includeRendering && LtxProductionExecutor.IsRendering(job))))
                 return null;
             var plan = await core.GetLtxPlanAsync(entry.JobId, ct).ConfigureAwait(false);
-            var reference = LtxProductionExecutor.ValidatePlan(job, plan, allowSettled: true);
+            var reference = LtxProductionExecutor.ValidatePlan(job, plan, allowSettled: true, allowRendering: includeRendering);
             if (jobs.Count > 0 && (job.CreativePackageId != jobs[0].CreativePackageId
                 || job.CreativePackageDigest != jobs[0].CreativePackageDigest || job.ProjectKey != jobs[0].ProjectKey
                 || reference.ApprovalId != refs[0].ApprovalId
@@ -70,24 +90,55 @@ internal static class P0ThreeShotAcceptanceGate
             //     three-shot freeze. Never accept unrelated single-shot jobs.
             var expectedKey = "reviewed-ltx-pilot-v12-" + reference.ApprovalId + "-"
                 + reference.ApprovalRequestDigest + "-shot-" + (jobs.Count + 1);
-            if (job.IdempotencyKey != expectedKey
-                || refs.Any(x => x.ShotId == reference.ShotId || x.AssetId == reference.AssetId
+            if (job.IdempotencyKey != expectedKey)
+            {
+                // 03a. A replacement is only a reroll of the original settled
+                //      job in this exact position. No arbitrary new shot/job.
+                if (!TryRerollOrigin(job.IdempotencyKey, out var sourceId)) return null;
+                var source = await session.GetProductionJobAsync(sourceId, ct).ConfigureAwait(false);
+                if (source.ProductionJobId != sourceId || source.IdempotencyKey != expectedKey
+                    || !LtxProductionExecutor.IsCandidateSettled(source)
+                    || source.CreativePackageId != job.CreativePackageId
+                    || source.CreativePackageDigest != job.CreativePackageDigest || source.ProjectKey != job.ProjectKey)
+                    return null;
+                var original = await core.GetLtxPlanAsync(sourceId, ct).ConfigureAwait(false);
+                var originalRef = LtxProductionExecutor.ValidatePlan(source, original, allowSettled: true);
+                if (originalRef != (reference with { ProductionJobId = originalRef.ProductionJobId,
+                        ProductionTaskId = originalRef.ProductionTaskId })
+                    || original.GetProperty("prompt").GetString() != plan.GetProperty("prompt").GetString()
+                    || original.GetProperty("seed").GetInt32() == plan.GetProperty("seed").GetInt32())
+                    return null;
+            }
+            if (refs.Any(x => x.ShotId == reference.ShotId || x.AssetId == reference.AssetId
                     || x.Sha256 == reference.Sha256 || x.ProductionTaskId == reference.ProductionTaskId))
                 return null;
             jobs.Add(job);
             refs.Add(reference);
         }
-        // 04. All three candidate settlements unlock only CPU rough-cut
-        //     assembly, not visual approval or a legacy PASS package.
-        if (jobs.All(LtxProductionExecutor.IsCandidateSettled))
-            return new(null, gate.BatchIdentity, jobs.AsReadOnly());
-        var next = NextLtxBatchJob(jobs);
-        return next is null ? null : new(next, gate.BatchIdentity);
+        return jobs.AsReadOnly();
+    }
+
+    internal static bool TryRerollOrigin(string key, out string sourceId)
+    {
+        const string prefix = "reviewed-ltx-reroll-v12-";
+        sourceId = "";
+        if (!key.StartsWith(prefix, StringComparison.Ordinal) || key.Length != prefix.Length + 73)
+            return false;
+        sourceId = key.Substring(prefix.Length, 36);
+        return key[prefix.Length + 36] == '-' && ValidJobId(sourceId)
+            && ValidJobId(key[(prefix.Length + 37)..]);
     }
 
     internal static ProductionJobRecord? NextLtxBatchJob(IReadOnlyList<ProductionJobRecord> jobs)
     {
         if (jobs.Count != 3) return null;
+        // 01. For replacement, all other shots must already be settled;
+        //     unlike initial production, later settled shots are expected.
+        var replacements = jobs.Where(job => LtxProductionExecutor.IsSelected(job)
+            && TryRerollOrigin(job.IdempotencyKey, out _)).ToArray();
+        if (replacements.Length > 0)
+            return replacements.Length == 1 && jobs.Count(LtxProductionExecutor.IsCandidateSettled) == 2
+                ? replacements[0] : null;
         var first = jobs.FirstOrDefault(job => !LtxProductionExecutor.IsCandidateSettled(job));
         if (first is null || !LtxProductionExecutor.IsSelected(first)) return null;
         var index = Array.IndexOf(jobs.ToArray(), first);
@@ -245,7 +296,61 @@ internal static class P0ThreeShotAcceptanceGate
         stream.Flush(flushToDisk: true);
     }
 
-    // 08. LTX alone may consume a batch permit. Legacy Wan permits below
+    // 08. Explicit single-shot replacement of an entirely settled batch.
+    //     The same GPU lock and journal protect the compare-and-swap.
+    internal static void ReplaceSettledLtxShot(IReadOnlyList<ProductionJobRecord> previous,
+        int index, ProductionJobRecord replacement)
+    {
+        var journal = new ProductionSubmissionJournal(ProductionSubmissionJournal.DefaultRoot);
+        using var gpu = journal.AcquireGpu();
+        if (journal.Pending().Count != 0) throw new ProductionWorkerException("MEDIA_PENDING_RECONCILIATION");
+        ReplaceSettledLtxShotAtPath(previous, index, replacement, DefaultPath);
+    }
+
+    internal static void ReplaceSettledLtxShotAtPath(IReadOnlyList<ProductionJobRecord> previous,
+        int index, ProductionJobRecord replacement, string path)
+    {
+        if (previous.Count != 3 || index is < 0 or > 2
+            || previous.Any(job => !LtxProductionExecutor.IsCandidateSettled(job)
+                || !ValidJobId(job.ProductionJobId) || !ValidDigest(job.PlanDigest))
+            || previous.Select(job => job.ProductionJobId).Distinct().Count() != 3
+            || previous.Select(job => job.PlanDigest).Distinct().Count() != 3
+            || previous.Any(job => job.CreativePackageId != replacement.CreativePackageId
+                || job.CreativePackageDigest != replacement.CreativePackageDigest || job.ProjectKey != replacement.ProjectKey)
+            || !LtxProductionExecutor.IsSelected(replacement) || !ValidJobId(replacement.ProductionJobId)
+            || !ValidDigest(replacement.PlanDigest) || !TryRerollOrigin(replacement.IdempotencyKey, out var source)
+            || source != (TryRerollOrigin(previous[index].IdempotencyKey, out var original)
+                ? original : previous[index].ProductionJobId)
+            || previous.Any(job => job.ProductionJobId == replacement.ProductionJobId || job.PlanDigest == replacement.PlanDigest))
+            throw new ProductionWorkerException("LTX_REROLL_BATCH_INVALID");
+
+        // 09. Never replace a different, changed or active permit. Crash
+        //     during exclusive write fails closed via the existing armed marker.
+        for (DirectoryInfo? current = new(Path.GetDirectoryName(path)!); current is not null; current = current.Parent)
+            if (current.Exists && (current.Attributes & FileAttributes.ReparsePoint) != 0)
+                throw new IOException("P0_ACCEPTANCE_PATH_INVALID");
+        if (!File.Exists(path) || (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0
+            || !MarkerExists(path + ".armed"))
+            throw new ProductionWorkerException("LTX_REROLL_BATCH_INVALID");
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None,
+            4096, FileOptions.WriteThrough);
+        if (stream.Length is <= 0 or > 1024) throw new ProductionWorkerException("LTX_REROLL_BATCH_INVALID");
+        var gate = Parse(stream);
+        if (gate.Mode != Mode.AllowLtxBatch || gate.Batch is null
+            || !gate.Batch.SequenceEqual(previous.Select(job => new Entry(job.ProductionJobId, job.PlanDigest!))))
+            throw new ProductionWorkerException("LTX_REROLL_BATCH_CHANGED");
+        var jobs = previous.ToArray();
+        jobs[index] = replacement;
+        var raw = JsonSerializer.SerializeToUtf8Bytes(new { schema_version = "1.1", mode = "allow_ltx_batch",
+            jobs = jobs.Select(job => new { production_job_id = job.ProductionJobId, plan_digest = job.PlanDigest }) });
+        if (raw.Length > 1024) throw new ProductionWorkerException("LTX_REROLL_BATCH_INVALID");
+        stream.Position = 0;
+        stream.SetLength(0);
+        stream.Write(raw);
+        stream.Flush(flushToDisk: true);
+    }
+
+    // 10. LTX alone may consume a batch permit. Legacy Wan permits below
     //     cannot use batch entries, and missing config never authorizes LTX.
     internal static IDisposable AcquireLtxSubmissionPermit(string jobId, string planDigest, string? batchIdentity) =>
         AcquireLtxSubmissionPermitAtPath(jobId, planDigest, batchIdentity, DefaultPath);

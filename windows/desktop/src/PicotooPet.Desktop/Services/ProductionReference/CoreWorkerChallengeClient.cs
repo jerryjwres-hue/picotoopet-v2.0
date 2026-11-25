@@ -820,7 +820,8 @@ internal sealed class CoreWorkerChallengeClient : IDisposable
     // 01. Historical frozen plan readback uses the same paired session.
     // 01. Explicit held reservation only, using the already paired Core.
     internal async Task<ProductionJobRecord> FreezeLtxPilotAsync(string packageId, string approvalId,
-        string key, CancellationToken ct, string? selectedShotId = null)
+        string key, CancellationToken ct, string? selectedShotId = null,
+        string? rerollOfJobId = null, string? rerollVariant = null)
     {
         if (!Guid.TryParseExact(packageId, "D", out _) || !Guid.TryParseExact(approvalId, "D", out _)
             || string.IsNullOrWhiteSpace(key) || key.Length > 200
@@ -836,6 +837,15 @@ internal sealed class CoreWorkerChallengeClient : IDisposable
             ["idempotency_key"] = key
         };
         if (selectedShotId is not null) payload["selected_shot_id"] = selectedShotId;
+        // 03. A reroll adds only the exact source and idempotent variant IDs.
+        if (rerollOfJobId is not null || rerollVariant is not null)
+        {
+            if (!Guid.TryParseExact(rerollOfJobId, "D", out var source) || source == Guid.Empty
+                || !Guid.TryParseExact(rerollVariant, "D", out var variant) || variant == Guid.Empty)
+                throw Invalid("LTX_REROLL_REQUEST_INVALID");
+            payload["reroll_of_job_id"] = rerollOfJobId;
+            payload["reroll_variant"] = rerollVariant;
+        }
         using var result = await PostAsync("api/v1/production/jobs/v1.2/freeze", payload,
             HttpStatusCode.OK, ct).ConfigureAwait(false);
         return result.RootElement.Deserialize<ProductionJobRecord>() ?? throw Invalid("LTX_FREEZE_RECEIPT_INVALID");

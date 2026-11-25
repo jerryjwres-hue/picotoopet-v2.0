@@ -350,6 +350,17 @@ public partial class ReferenceBatchPreviewPanel : UserControl
         catch (Exception) { OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, vm.StatusText); }
     }
 
+    private async void RerollLtxShot_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ReferenceBatchPreviewViewModel vm || !vm.CanReadLtxReview
+            || sender is not Button { Tag: string shotId }) return;
+        if (System.Windows.MessageBox.Show(
+            $"仅重新生成 {shotId}？将使用本地 GPU，保留其他两段和旧影片。",
+            "确认单镜头抽卡", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        try { await vm.RerollLtxShotAsync(shotId); }
+        catch (Exception) { OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, vm.StatusText); }
+    }
+
     private async void PlayLtxShot_Click(object sender, RoutedEventArgs e)
     {
         if (DataContext is not ReferenceBatchPreviewViewModel vm || !vm.CanReadLtxReview

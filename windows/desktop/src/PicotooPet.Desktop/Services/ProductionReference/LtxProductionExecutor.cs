@@ -27,6 +27,12 @@ internal static class LtxProductionExecutor
         && job.LeaseExecutorId is null && job.LeaseExpiresAt is null
         && job.FinishedAt is not null && job.PlanDigest is { Length: 64 };
 
+    // 02. Read-only UI may inspect a currently rendering frozen plan;
+    //     this state never passes IsSelected or starts another GPU claim.
+    internal static bool IsRendering(ProductionJobRecord job) =>
+        job.ProductionProfile == "production.ltx.desktop.local.v1"
+        && job.Status == "Rendering" && job.PlanDigest is { Length: 64 };
+
     internal static async Task RunAsync(ControlCenterSession session, ProductionJobRecord job,
         ProductionSubmissionJournal journal, CancellationToken ct, string? batchIdentity = null)
     {
@@ -105,11 +111,12 @@ internal static class LtxProductionExecutor
     }
 
     internal static ProductionReferenceAssetV11Record ValidatePlan(ProductionJobRecord job, JsonElement plan,
-        bool allowSettled = false)
+        bool allowSettled = false, bool allowRendering = false)
     {
         // 07. Verify the original JSON digest and complete renderer identity,
         //     not a locally reconstructed Wan or StoryPack plan.
-        if ((!IsSelected(job) && !(allowSettled && IsCandidateSettled(job))) || plan.ValueKind != JsonValueKind.Object
+        if ((!IsSelected(job) && !(allowSettled && IsCandidateSettled(job))
+            && !(allowRendering && IsRendering(job))) || plan.ValueKind != JsonValueKind.Object
             || Convert.ToHexStringLower(SHA256.HashData(CanonicalJson.Serialize(JsonNode.Parse(plan.GetRawText())!))) != job.PlanDigest
             || plan.GetProperty("schema_version").GetString() != "1.2"
             || plan.GetProperty("production_profile").GetString() != job.ProductionProfile

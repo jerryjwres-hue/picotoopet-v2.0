@@ -208,6 +208,8 @@
        <TextBlock Text="{Binding ShotId}" FontWeight="SemiBold" Margin="0,0,10,0" VerticalAlignment="Center"/>
        <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,10,0"/>
        <Button Content="播放镜头" Tag="{Binding ShotId}" IsEnabled="{Binding CanPlay}" Click="PlayLtxShot_Click" Padding="8,3"/>
+       <Button Content="仅重抽此镜头" Tag="{Binding ShotId}" IsEnabled="{Binding CanReroll}"
+               Click="RerollLtxShot_Click" Padding="8,3" Margin="8,0,0,0"/>
       </WrapPanel>
      </DataTemplate>
     </ItemsControl.ItemTemplate>

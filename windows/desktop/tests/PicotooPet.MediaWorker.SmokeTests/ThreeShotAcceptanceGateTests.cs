@@ -128,6 +128,24 @@ internal static class ThreeShotAcceptanceGateTests
             throw new InvalidOperationException("different ALLOW overwritten");
         }
         catch (ProductionWorkerException error) when (error.Code == "LTX_OPERATOR_HOLD_REQUIRED") { }
+        // 05. Replacement permits preserve the two settled neighbors and
+        //     allow exactly one new held shot, even at position two.
+        var settledJobs = jobs.Select(job => job with { FailureCode = "LTX_PILOT_REVIEW_REQUIRED" }).ToArray();
+        var rerollId = "10000000-0000-4000-8000-000000000004";
+        var variant = "10000000-0000-4000-8000-000000000005";
+        var replacement = jobs[1] with { ProductionJobId = rerollId, PlanDigest = new string('d', 64),
+            IdempotencyKey = $"reviewed-ltx-reroll-v12-{ids[1]}-{variant}" };
+        P0ThreeShotAcceptanceGate.ReplaceSettledLtxShotAtPath(settledJobs, 1, replacement, path);
+        var changed = new[] { settledJobs[0], replacement, settledJobs[2] };
+        RecoveryTests.Assert(P0ThreeShotAcceptanceGate.NextLtxBatchJob(changed) == replacement,
+            "single reroll should not regenerate settled neighbors");
+        var changedIdentity = ProductionSubmissionJournal.Hash(string.Join("\n", changed.Select(job =>
+            job.ProductionJobId + ":" + job.PlanDigest)));
+        using (var permit = P0ThreeShotAcceptanceGate.AcquireLtxSubmissionPermitAtPath(
+            rerollId, replacement.PlanDigest!, changedIdentity, path))
+            RecoveryTests.Assert(permit is not null, "only replaced exact job gets the new permit");
+        Reject(ids[1], digests[1], changedIdentity);
+        Reject(rerollId, replacement.PlanDigest!, identity);
         File.Delete(path);
         Reject(ids[0], digests[0], identity);
         Console.WriteLine("LTX_ORDERED_BATCH_GATE=PASS; GPU_POST=0");

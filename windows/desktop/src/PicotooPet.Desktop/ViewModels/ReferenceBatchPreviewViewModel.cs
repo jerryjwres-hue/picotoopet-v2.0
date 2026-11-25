@@ -266,6 +266,37 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
         }
         finally { Exit(); }
     }
+    // 01. A failed transport retry keeps the per-shot variant in this
+    //     view; no new seed is allocated on the next retry of that click.
+    private readonly Dictionary<string, string> _ltxRerollVariants = new(StringComparer.Ordinal);
+    public async Task RerollLtxShotAsync(string shotId, CancellationToken ct = default)
+    {
+        if (!CanReadLtxReview || _gateway is not ILtxCandidateReviewGateway review
+            || Receipt is not { Status: "Approved" } || LtxReview?.Shots.Any(shot =>
+                shot.ShotId == shotId && shot.CanReroll) != true)
+            throw new InvalidDataException("LTX_REROLL_CONTEXT_INVALID");
+        if (!Enter()) throw new InvalidOperationException("REFERENCE_OPERATION_BUSY");
+        try
+        {
+            var initial = _initialReceipt ?? throw new InvalidDataException("REFERENCE_RECEIPT_REQUIRED");
+            var request = _frozenRequest ?? throw new InvalidDataException("REFERENCE_REQUEST_REQUIRED");
+            await VerifySnapshotsAsync(request, ct);
+            var fresh = await ReadBoundReceiptAsync(request, initial, ct);
+            Receipt = fresh;
+            if (!_ltxRerollVariants.TryGetValue(shotId, out var variant))
+                _ltxRerollVariants[shotId] = variant = Guid.NewGuid().ToString("D");
+            await review.RerollLtxShotAsync(fresh, EligibleShots, shotId, variant, ct);
+            _ltxRerollVariants.Remove(shotId);
+            LtxReview = null;
+            StatusText = "已放行单镜头新版本；其他两个镜头与旧影片保留。请刷新生成状态。";
+        }
+        catch
+        {
+            StatusText = "单镜头抽卡未确认；旧影片保留，可刷新后用原请求重试。";
+            throw;
+        }
+        finally { Exit(); }
+    }
     public string ReviewedPlanLabel => _portraitFluxCandidate
         ? "冻结已审核的 LTX 计划（首镜头或完整三镜头，不启动 GPU）"
         : "创建已审核的三镜头生产计划（不启动 GPU）";

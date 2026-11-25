@@ -50,6 +50,10 @@ public sealed partial class ControlCenterSession : IReviewedThreeShotPlanGateway
         IReadOnlyList<string> shotIds, CancellationToken cancellationToken)
         => LtxBatchReviewReader.ReadAsync(this, receipt, shotIds, cancellationToken);
 
+    public Task RerollLtxShotAsync(ReferenceBatchReceipt receipt, IReadOnlyList<string> shotIds,
+        string shotId, string variant, CancellationToken cancellationToken)
+        => LtxBatchReviewReader.RerollAsync(this, receipt, shotIds, shotId, variant, cancellationToken);
+
     public async Task<ReferenceBatchReceipt> GetReferenceBatchAsync(string approvalId, CancellationToken cancellationToken)
     {
         await using var client = CreateGoalCenterClient();
