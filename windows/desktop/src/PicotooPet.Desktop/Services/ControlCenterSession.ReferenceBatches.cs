@@ -5,7 +5,7 @@ namespace PicotooPet.Desktop.Services;
 
 /// <summary>复用现有 Core 配对凭证提交待审核参考图片；此处绝不直接批准或启动 GPU。</summary>
 public sealed partial class ControlCenterSession : IReviewedThreeShotPlanGateway, IReviewedLtxPilotGateway,
-    ILtxCandidateReviewGateway
+    ILtxCandidateReviewGateway, IFluxDraftGateway
 {
     public async Task<ReferenceBatchReceipt> RegisterReferenceBatchAsync(
         ReferenceBatchRequest request, string idempotencyKey, CancellationToken cancellationToken)
@@ -53,6 +53,13 @@ public sealed partial class ControlCenterSession : IReviewedThreeShotPlanGateway
     public Task RerollLtxShotAsync(ReferenceBatchReceipt receipt, IReadOnlyList<string> shotIds,
         string shotId, string variant, CancellationToken cancellationToken)
         => LtxBatchReviewReader.RerollAsync(this, receipt, shotIds, shotId, variant, cancellationToken);
+
+    // 01. Reuse the paired Creative package downloader and local runner.
+    //     This operation produces only unapproved still-image candidates.
+    public Task<FluxDraftResult> GenerateFluxDraftAsync(string creativeJobId, string packageId,
+        string packageDigest, string? shotId, CancellationToken cancellationToken)
+        => FluxDraftExecution.GenerateAsync(this, creativeJobId, packageId, packageDigest,
+            shotId, cancellationToken);
 
     public async Task<ReferenceBatchReceipt> GetReferenceBatchAsync(string approvalId, CancellationToken cancellationToken)
     {

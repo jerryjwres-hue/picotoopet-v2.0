@@ -65,6 +65,9 @@
           <WrapPanel Margin="0,5,0,5">
            <Button Content="复制此镜头 Prompt" Tag="{Binding}" Padding="8,4"
                    HorizontalAlignment="Left" Click="CopyCompositionPrompt_Click" Margin="0,0,8,0"/>
+           <Button Content="重抽此 FLUX 首帧" Tag="{Binding ShotId}" Padding="8,4" Margin="0,0,8,0"
+                   IsEnabled="{Binding DataContext.CanGenerateFluxDraft, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                   Click="GenerateFluxShot_Click"/>
            <Button Content="为此镜头选择参考图…" Tag="{Binding}" Padding="8,4"
                    HorizontalAlignment="Left"
                    IsEnabled="{Binding DataContext.CanEdit, RelativeSource={RelativeSource AncestorType=UserControl}}"
@@ -82,6 +85,9 @@
     <StackPanel>
      <TextBlock Text="候选清单只显示历史结果，不证明图像质量或使用权。本地 AI 输出不能自动归类为 USER_SUPPLIED；使用前须提供 LICENSED 来源凭据 SHA-256。" TextWrapping="Wrap" Margin="0,0,0,7"/>
      <WrapPanel Margin="0,0,0,8">
+      <!-- 01. Explicit FLUX generation; only the current frozen portrait Kit. -->
+      <Button Content="生成三张 FLUX 首帧" Padding="12,6" Margin="0,0,8,0"
+              IsEnabled="{Binding CanGenerateFluxDraft, FallbackValue=False}" Click="GenerateFluxBatch_Click"/>
       <Button x:Name="LoadObservedCandidatesButton" Content="读取单份候选清单..." Padding="12,6"
               HorizontalAlignment="Left" IsEnabled="{Binding CanLoadObservedCandidates, FallbackValue=False}"
               Click="LoadObservedCandidates_Click" Margin="0,0,8,0"/>

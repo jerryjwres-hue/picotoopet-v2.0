@@ -164,6 +164,34 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
     public bool IsBusy => Volatile.Read(ref _operation) != 0;
     public bool CanEdit => !IsBusy && _frozenRequest is null;
     public bool CanLoadObservedCandidates => CanEdit && (_p0PlanCandidate || _portraitFluxCandidate);
+    public bool CanGenerateFluxDraft => CanEdit && _portraitFluxCandidate && _gateway is IFluxDraftGateway;
+
+    // 01. Explicit local GPU draft action; keep registration and approval
+    //     separate. The existing thumbnail verifier remains authoritative.
+    public async Task<string> GenerateFluxDraftAsync(string? shotId, CancellationToken ct = default)
+    {
+        if (!CanGenerateFluxDraft || _gateway is not IFluxDraftGateway flux
+            || (shotId is not null && !_eligibleShots.Contains(shotId)))
+            throw new InvalidDataException("FLUX_DRAFT_CONTEXT_INVALID");
+        if (!Enter()) throw new InvalidOperationException("REFERENCE_OPERATION_BUSY");
+        FluxDraftResult result;
+        try
+        {
+            StatusText = "FLUX 本地首帧生成中；尚未选图或批准。";
+            result = await flux.GenerateFluxDraftAsync(_creativeJobId, CreativePackageId,
+                CreativePackageDigest, shotId, ct);
+        }
+        catch
+        {
+            StatusText = "FLUX 首帧未完成；请检查本地配置、HOLD 和执行记录，不会自动重试 GPU。";
+            throw;
+        }
+        finally { Exit(); }
+        await LoadObservedCandidateManifestsAsync(result.ManifestPaths, ct);
+        await InspectObservedCandidatesAsync(result.OutputRoot, ct);
+        StatusText = "首帧候选已生成并核对缩略图；请选择满意图片并确认使用权。";
+        return result.OutputRoot;
+    }
     public bool CanLoadCompositionWorkOrder => CanEdit && _p0PlanCandidate;
     // 02. Export is solely a copy of frozen source data, even after a
     //     request is locked; it does not mutate state or authorize GPU.
@@ -1309,6 +1337,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
         RaisePropertyChanged(nameof(IsBusy));
         RaisePropertyChanged(nameof(CanEdit));
         RaisePropertyChanged(nameof(CanLoadObservedCandidates));
+        RaisePropertyChanged(nameof(CanGenerateFluxDraft));
         RaisePropertyChanged(nameof(CanLoadCompositionWorkOrder));
         RaisePropertyChanged(nameof(CanResumeReferenceBatch));
         RaisePropertyChanged(nameof(CanSubmit));

@@ -45,7 +45,9 @@ class ExistingFluxBoardHandoffTests(unittest.TestCase):
         # 02. Every CI file is synthetic and lives in a temporary folder.
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        # 02a. macOS TMPDIR may be beneath /var -> /private/var.
+        #      Normalize the fixture root, not the production reparse policy.
+        self.root = Path(self.temp.name).resolve()
         self.runner = self.root / "run_flux_board.py"
         self.runner.write_text(SYNTHETIC_BUILDER, encoding="utf-8")
         (self.root / "refs_real").mkdir()

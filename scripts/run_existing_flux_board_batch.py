@@ -19,6 +19,10 @@ import stat
 import subprocess
 import sys
 
+# 01. The deployed tools are a closed scripts directory, not imports from
+#     the current working directory or a user-supplied PYTHONPATH.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import prepare_existing_flux_board_shot as bridge
 from collect_local_keyframe_outputs import collect_flux_batch
 

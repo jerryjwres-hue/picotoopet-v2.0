@@ -25,6 +25,14 @@
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
     </Content>
 
+    <!-- 01. Ship the existing CPU preparation/collection and pinned-runner
+         entry point, not an additional model or executable download. -->
+    <Content Include="..\..\..\..\scripts\run_existing_flux_board_batch.py;..\..\..\..\scripts\prepare_existing_flux_board_shot.py;..\..\..\..\scripts\prepare_local_keyframe_batch.py;..\..\..\..\scripts\collect_local_keyframe_outputs.py;..\..\..\..\scripts\recover_comfy_keyframe_workflow.py;..\..\..\..\scripts\comfy_png_embedded_evidence.py;..\..\..\..\scripts\qwen_reference_bindings.py">
+      <Link>flux-tools\scripts\%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </Content>
+
     <Content Include="..\..\..\..\src\picotoopet_core\product-version.txt"
              Link="product-version.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

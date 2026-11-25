@@ -151,6 +151,32 @@ public partial class ReferenceBatchPreviewPanel : UserControl
         }
     }
 
+    // 01. Explicit local GPU consent; no automatic selection or approval.
+    private async void GenerateFluxBatch_Click(object sender, RoutedEventArgs e)
+        => await GenerateFluxAsync(null);
+
+    private async void GenerateFluxShot_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: string shotId }) await GenerateFluxAsync(shotId);
+    }
+
+    private async Task GenerateFluxAsync(string? shotId)
+    {
+        if (DataContext is not ReferenceBatchPreviewViewModel vm || !vm.CanGenerateFluxDraft) return;
+        var description = shotId is null ? "三个镜头" : shotId;
+        if (System.Windows.MessageBox.Show($"使用本地 GPU 生成 {description} 的 FLUX 首帧候选？不会自动批准或生成视频。",
+            "确认首帧生成", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        try
+        {
+            _observedOutputRoot = await vm.GenerateFluxDraftAsync(shotId);
+            OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, vm.StatusText);
+        }
+        catch (Exception)
+        {
+            OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, vm.StatusText);
+        }
+    }
+
     private async void LoadObservedCandidates_Click(object sender, RoutedEventArgs e)
     {
         if (DataContext is not ReferenceBatchPreviewViewModel vm || !vm.CanLoadObservedCandidates) return;
