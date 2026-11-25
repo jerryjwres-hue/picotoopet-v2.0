@@ -15,5 +15,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="PicotooPet.OwnerReview.SmokeTests" />
     <InternalsVisibleTo Include="PicotooPet.Desktop.Core.SmokeTests" />
+    <!-- The shipping same-EXE worker owns the signed LTX transport boundary. -->
+    <InternalsVisibleTo Include="Picotoo Pet AI" />
   </ItemGroup>
 </Project>
