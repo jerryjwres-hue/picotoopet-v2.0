@@ -22,7 +22,7 @@ public sealed partial class LtxDesktopLocalI2vPreflightClient
     /// The existing GPU lock and journal are mandatory, not a substitute
     /// for that future authorization.
     /// </summary>
-    internal async Task<LtxDesktopSubmissionReceipt> SubmitOnceTransportAsync(
+    internal Task<LtxDesktopSubmissionReceipt> SubmitOnceTransportAsync(
         LtxDesktopI2vDraft draft, string localSettingsFile,
         ProductionSubmissionJournal journal, ProductionSubmissionJournal.GpuLease gpu,
         string jobId, string taskId, string planDigest,
