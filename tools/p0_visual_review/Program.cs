@@ -1,5 +1,7 @@
 // P0-Q2 #140: independent read-only observer CLI. Review logic lives in
 // tools/p0_visual_review_core (shared with the Desktop app); this file is only the entry point.
+using System.Text.Json;
+
 namespace PicotooPet.QualityObservation;
 
 public static class Program

@@ -164,7 +164,7 @@ internal static class ThreeShotAcceptanceGateTests
             "LTX_SIGNED_WORKER_NOT_ENABLED", null, $"fixture-{seed}-{i}", now, now, null)).ToArray();
         ProductionJobRecord[] Settled(ProductionJobRecord[] jobs) =>
             jobs.Select(job => job with { FailureCode = "LTX_PILOT_REVIEW_REQUIRED", FinishedAt = now }).ToArray();
-        string Mode() => JsonDocument.Parse(File.ReadAllText(path)).RootElement.GetProperty("mode").GetString()!;
+        string Mode() => JsonElement.Parse(File.ReadAllText(path)).GetProperty("mode").GetString()!;
         void Expect(string code, Action action, string message)
         {
             try { action(); throw new InvalidOperationException(message); }
