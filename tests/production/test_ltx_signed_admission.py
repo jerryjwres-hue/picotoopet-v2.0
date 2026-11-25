@@ -285,3 +285,38 @@ def test_ltx_live_snapshot_check_is_read_only_and_revocable(pilot):
         assert client.post(route, json=body).status_code == 409
         assert client.get(p.root + "/ltx-plan").status_code == 200
         assert facts(p) == before
+
+
+def test_ltx_vendor_binding_is_exact_idempotent_and_not_media_success(pilot):
+    p = pilot
+    with TestClient(p.app) as client:
+        proof = witness(p, issue(client, p))
+        response = client.post(p.root + "/ltx-claim", json=proof.model_dump(mode="json"))
+        assert response.status_code == 200, response.text
+        data = response.json()
+        lease = {key: data[key] for key in (
+            "executor_id", "lease_token", "production_attempt_id",
+            "plan_digest", "vendor_intent_digest",
+        )}
+        generation, asset = str(uuid4()), str(uuid4())
+        body = dict(lease, generation_id=generation, start_frame_asset_id=asset)
+        route = p.root + "/ltx-vendor/bind"
+        assert client.post(route, json=dict(body, lease_token="wrong")).status_code == 409
+        assert client.post(route, json=dict(body, production_attempt_id=str(uuid4()))).status_code == 409
+        receipt = client.post(route, json=body)
+        assert receipt.status_code == 200, receipt.text
+        assert receipt.json()["generation_id"] == generation
+        before = facts(p)
+        assert client.post(route, json=body).json() == receipt.json()
+        assert client.post(route, json=dict(body, generation_id=str(uuid4()))).status_code == 409
+        assert client.post(route, json=dict(body, start_frame_asset_id=str(uuid4()))).status_code == 409
+        assert facts(p) == before
+        row = p.db.fetchone("SELECT * FROM production_attempts")
+        assert row["ltx_generation_id"] == generation and row["ltx_start_frame_asset_id"] == asset
+        assert row["status"] == "Running" and row["comfy_prompt_id"] is None
+        assert client.post(p.root + "/ltx-lease/recheck", json=lease).status_code == 200
+        p.registration.revoke(
+            p.receipt.approval_id, request_digest=p.receipt.approval_request_digest,
+            reason="fixture revoke",
+        )
+        assert client.post(route, json=body).status_code == 409

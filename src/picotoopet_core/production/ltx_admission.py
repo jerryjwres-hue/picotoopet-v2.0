@@ -11,7 +11,7 @@ import json
 import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Literal
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -270,87 +270,150 @@ def check_ltx_lease(service: ProductionService, job_id: str,
     This does not bind a vendor result or establish that the local GPU has
     run. The Windows process must still own the shared GPU lock and journal.
     """
-    db = service.repository.database
-    with db.transaction() as connection:
-        # 01. Source identity and current revocable approval are checked
-        #     together with the actual persisted lease and task.
-        plan = load_frozen_ltx_pilot_plan(service, job_id)
-        job = connection.execute(
-            "SELECT * FROM production_jobs WHERE production_job_id=?", (job_id,),
-        ).fetchone()
-        now = datetime.now(UTC)
-        digest = hashlib.sha256(request.lease_token.encode()).hexdigest()
-        if (job["status"] != "Rendering"
-            or job["lease_executor_id"] != request.executor_id
-            or not job["lease_token_digest"]
-            or not hmac.compare_digest(job["lease_token_digest"], digest)
-            or not job["lease_expires_at"]
-            or datetime.fromisoformat(job["lease_expires_at"]) <= now
-            or job["plan_digest"] != request.plan_digest
-            or vendor_intent_digest(plan) != request.vendor_intent_digest):
-            raise ValueError("LTX_LEASE_SCOPE_INVALID")
-        current = compile_ltx_pilot_plan(
-            service, production_job_id=job_id,
-            creative_package_id=plan.creative_package_id,
-            approved_reference_id=plan.reference_asset.approval_id,
+    with service.repository.database.transaction() as connection:
+        return _check_ltx_lease_locked(service, connection, job_id, request, renew=renew)
+
+
+def _check_ltx_lease_locked(service: ProductionService, connection, job_id: str,
+                            request: LtxLeaseRequestV12, *, renew: bool = False) -> LtxLeaseReceiptV12:
+    # 01. Source identity and current revocable approval are checked
+    #     together with the actual persisted lease and task.
+    plan = load_frozen_ltx_pilot_plan(service, job_id)
+    job = connection.execute(
+        "SELECT * FROM production_jobs WHERE production_job_id=?", (job_id,),
+    ).fetchone()
+    now = datetime.now(UTC)
+    digest = hashlib.sha256(request.lease_token.encode()).hexdigest()
+    if (job["status"] != "Rendering"
+        or job["lease_executor_id"] != request.executor_id
+        or not job["lease_token_digest"]
+        or not hmac.compare_digest(job["lease_token_digest"], digest)
+        or not job["lease_expires_at"]
+        or datetime.fromisoformat(job["lease_expires_at"]) <= now
+        or job["plan_digest"] != request.plan_digest
+        or vendor_intent_digest(plan) != request.vendor_intent_digest):
+        raise ValueError("LTX_LEASE_SCOPE_INVALID")
+    current = compile_ltx_pilot_plan(
+        service, production_job_id=job_id,
+        creative_package_id=plan.creative_package_id,
+        approved_reference_id=plan.reference_asset.approval_id,
+    )
+    if current != plan:
+        raise ValueError("LTX_LEASE_SOURCE_CHANGED")
+
+    # 02. A pasted token, rotated legacy lease, or tampered signed
+    #     witness cannot create authority. Nonce expiry is evaluated
+    #     at admission; later checks require the current admitted lease.
+    row = connection.execute(
+        "SELECT * FROM production_worker_challenges WHERE production_job_id=? "
+        "AND admitted_lease_token_digest=? AND consumed_at IS NOT NULL",
+        (job_id, digest),
+    ).fetchone()
+    if (row is None or row["executor_id"] != request.executor_id
+        or row["plan_digest"] != plan.digest() or not row["admitted_witness_json"]
+        or hashlib.sha256(row["admitted_witness_json"].encode()).hexdigest()
+            != row["admitted_witness_sha256"]):
+        raise ValueError("LTX_LEASE_SIGNED_ADMISSION_REQUIRED")
+    proof = LtxWorkerWitnessV12.model_validate_json(row["admitted_witness_json"])
+    if (proof.production_job_id != job_id or proof.plan_digest != plan.digest()
+        or proof.executor_id != request.executor_id or proof.worker_key_id != row["key_id"]
+        or hashlib.sha256(proof.nonce.encode("ascii")).hexdigest() != row["nonce_digest"]):
+        raise ValueError("LTX_LEASE_SIGNED_ADMISSION_REQUIRED")
+    key = require_b_key_locked(connection, proof.worker_key_id, proof.executor_id)
+    _verify_ed25519(key["public_key_hex"], proof.signature, proof.signed_payload())
+
+    # 03. Only the one immutable reserved LTX attempt may use the lease.
+    tasks = connection.execute(
+        "SELECT * FROM production_tasks WHERE production_job_id=?", (job_id,),
+    ).fetchall()
+    attempts = connection.execute(
+        "SELECT * FROM production_attempts WHERE production_job_id=?", (job_id,),
+    ).fetchall()
+    if len(tasks) != 1 or len(attempts) != 1:
+        raise ValueError("LTX_LEASE_ATTEMPT_SCOPE_INVALID")
+    task, attempt = tasks[0], attempts[0]
+    if (task["production_task_id"] != plan.production_task_id
+        or task["workflow_id"] != plan.workflow_id or task["shot_id"] != plan.shot_id
+        or task["status"] != "Running" or task["attempt_count"] != 1
+        or json.loads(task["task_plan_json"]) != plan.model_dump(mode="json")
+        or attempt["production_attempt_id"] != request.production_attempt_id
+        or attempt["production_task_id"] != plan.production_task_id
+        or attempt["attempt_number"] != 1 or attempt["status"] != "Running"
+        or attempt["executor_id"] != request.executor_id
+        or task["comfy_prompt_id"] is not None or attempt["comfy_prompt_id"] is not None):
+        raise ValueError("LTX_LEASE_ATTEMPT_SCOPE_INVALID")
+    # 04. A bound vendor receipt must be complete, never a legacy prompt ID.
+    if (attempt["ltx_generation_id"] is None) != (attempt["ltx_start_frame_asset_id"] is None):
+        raise ValueError("LTX_VENDOR_BINDING_INCOMPLETE")
+    expires = datetime.fromisoformat(job["lease_expires_at"])
+    if renew:
+        # 04. Renew only the exact signed lease, with no task or attempt
+        #     creation and no vendor request. Revoke stops renewal.
+        expires = now + timedelta(seconds=600)
+        connection.execute(
+            "UPDATE production_jobs SET lease_expires_at=?,updated_at=? "
+            "WHERE production_job_id=? AND lease_token_digest=?",
+            (expires.isoformat(), now.isoformat(), job_id, digest),
         )
-        if current != plan:
-            raise ValueError("LTX_LEASE_SOURCE_CHANGED")
+    return LtxLeaseReceiptV12(
+        production_job_id=job_id, production_task_id=plan.production_task_id,
+        production_attempt_id=request.production_attempt_id,
+        plan_digest=plan.digest(), vendor_intent_digest=request.vendor_intent_digest,
+        lease_expires_at=expires,
+    )
 
-        # 02. A pasted token, rotated legacy lease, or tampered signed
-        #     witness cannot create authority. Nonce expiry is evaluated
-        #     at admission; later checks require the current admitted lease.
+
+class LtxVendorBindingRequestV12(LtxLeaseRequestV12):
+    generation_id: UUID
+    start_frame_asset_id: UUID
+
+
+class LtxVendorBindingReceiptV12(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    schema_version: Literal["production.ltx.vendor_binding.v1"] = "production.ltx.vendor_binding.v1"
+    production_job_id: str
+    production_task_id: str
+    production_attempt_id: str
+    plan_digest: str
+    vendor_intent_digest: str
+    generation_id: UUID
+    start_frame_asset_id: UUID
+
+
+def bind_ltx_vendor_generation(service: ProductionService, job_id: str,
+                               request: LtxVendorBindingRequestV12) -> LtxVendorBindingReceiptV12:
+    # 01. In the same transaction, revalidate signed lease and bind exactly
+    #     one vendor generation. A receipt is not media success or local-lane proof.
+    generation = str(request.generation_id)
+    asset = str(request.start_frame_asset_id)
+    if request.generation_id.int == 0 or request.start_frame_asset_id.int == 0:
+        raise ValueError("LTX_VENDOR_BINDING_INVALID")
+    with service.repository.database.transaction() as connection:
+        lease = _check_ltx_lease_locked(service, connection, job_id, request)
         row = connection.execute(
-            "SELECT * FROM production_worker_challenges WHERE production_job_id=? "
-            "AND admitted_lease_token_digest=? AND consumed_at IS NOT NULL",
-            (job_id, digest),
+            "SELECT ltx_generation_id,ltx_start_frame_asset_id FROM production_attempts "
+            "WHERE production_attempt_id=?", (lease.production_attempt_id,),
         ).fetchone()
-        if (row is None or row["executor_id"] != request.executor_id
-            or row["plan_digest"] != plan.digest() or not row["admitted_witness_json"]
-            or hashlib.sha256(row["admitted_witness_json"].encode()).hexdigest()
-                != row["admitted_witness_sha256"]):
-            raise ValueError("LTX_LEASE_SIGNED_ADMISSION_REQUIRED")
-        proof = LtxWorkerWitnessV12.model_validate_json(row["admitted_witness_json"])
-        if (proof.production_job_id != job_id or proof.plan_digest != plan.digest()
-            or proof.executor_id != request.executor_id or proof.worker_key_id != row["key_id"]
-            or hashlib.sha256(proof.nonce.encode("ascii")).hexdigest() != row["nonce_digest"]):
-            raise ValueError("LTX_LEASE_SIGNED_ADMISSION_REQUIRED")
-        key = require_b_key_locked(connection, proof.worker_key_id, proof.executor_id)
-        _verify_ed25519(key["public_key_hex"], proof.signature, proof.signed_payload())
-
-        # 03. Only the one immutable reserved LTX attempt may use the lease.
-        tasks = connection.execute(
-            "SELECT * FROM production_tasks WHERE production_job_id=?", (job_id,),
-        ).fetchall()
-        attempts = connection.execute(
-            "SELECT * FROM production_attempts WHERE production_job_id=?", (job_id,),
-        ).fetchall()
-        if len(tasks) != 1 or len(attempts) != 1:
-            raise ValueError("LTX_LEASE_ATTEMPT_SCOPE_INVALID")
-        task, attempt = tasks[0], attempts[0]
-        if (task["production_task_id"] != plan.production_task_id
-            or task["workflow_id"] != plan.workflow_id or task["shot_id"] != plan.shot_id
-            or task["status"] != "Running" or task["attempt_count"] != 1
-            or json.loads(task["task_plan_json"]) != plan.model_dump(mode="json")
-            or attempt["production_attempt_id"] != request.production_attempt_id
-            or attempt["production_task_id"] != plan.production_task_id
-            or attempt["attempt_number"] != 1 or attempt["status"] != "Running"
-            or attempt["executor_id"] != request.executor_id
-            or task["comfy_prompt_id"] is not None or attempt["comfy_prompt_id"] is not None):
-            raise ValueError("LTX_LEASE_ATTEMPT_SCOPE_INVALID")
-        expires = datetime.fromisoformat(job["lease_expires_at"])
-        if renew:
-            # 04. Renew only the exact signed lease, with no task or attempt
-            #     creation and no vendor request. Revoke stops renewal.
-            expires = now + timedelta(seconds=600)
-            connection.execute(
-                "UPDATE production_jobs SET lease_expires_at=?,updated_at=? "
-                "WHERE production_job_id=? AND lease_token_digest=?",
-                (expires.isoformat(), now.isoformat(), job_id, digest),
+        prior = (row["ltx_generation_id"], row["ltx_start_frame_asset_id"])
+        if prior != (None, None) and prior != (generation, asset):
+            raise ValueError("LTX_VENDOR_BINDING_CONFLICT")
+        if prior == (None, None):
+            duplicate = connection.execute(
+                "SELECT 1 FROM production_attempts WHERE ltx_generation_id=?", (generation,),
+            ).fetchone()
+            if duplicate is not None:
+                raise ValueError("LTX_VENDOR_GENERATION_ALREADY_BOUND")
+            result = connection.execute(
+                "UPDATE production_attempts SET ltx_generation_id=?,ltx_start_frame_asset_id=? "
+                "WHERE production_attempt_id=? AND ltx_generation_id IS NULL "
+                "AND ltx_start_frame_asset_id IS NULL",
+                (generation, asset, lease.production_attempt_id),
             )
-        return LtxLeaseReceiptV12(
-            production_job_id=job_id, production_task_id=plan.production_task_id,
-            production_attempt_id=request.production_attempt_id,
-            plan_digest=plan.digest(), vendor_intent_digest=request.vendor_intent_digest,
-            lease_expires_at=expires,
+            if result.rowcount != 1:
+                raise ValueError("LTX_VENDOR_BINDING_CONFLICT")
+        return LtxVendorBindingReceiptV12(
+            production_job_id=job_id, production_task_id=lease.production_task_id,
+            production_attempt_id=lease.production_attempt_id,
+            plan_digest=lease.plan_digest, vendor_intent_digest=lease.vendor_intent_digest,
+            generation_id=request.generation_id, start_frame_asset_id=request.start_frame_asset_id,
         )

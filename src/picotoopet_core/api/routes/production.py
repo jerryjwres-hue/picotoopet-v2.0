@@ -37,6 +37,7 @@ from picotoopet_core.production.ltx_admission import (
     LtxWorkerWitnessV12, LtxClaimReceiptV12, issue_ltx_challenge,
     claim_ltx_first_attempt, LtxLeaseRequestV12, LtxLeaseReceiptV12, check_ltx_lease,
     LtxReferenceCheckV12, LtxReferenceReceiptV12, check_ltx_reference,
+    LtxVendorBindingRequestV12, LtxVendorBindingReceiptV12, bind_ltx_vendor_generation,
 )
 from picotoopet_core.security.auth import require_auth
 
@@ -219,6 +220,19 @@ def claim_production_job_v12(
     #     This route cannot execute a renderer or call the Windows GPU.
     response.headers["Cache-Control"] = "no-store, private"
     return execute_production(lambda: claim_ltx_first_attempt(
+        request.app.state.services.production, production_job_id, payload,
+    ))
+
+
+@router.post("/production/jobs/{production_job_id}/ltx-vendor/bind",
+             response_model=LtxVendorBindingReceiptV12)
+def bind_production_ltx_vendor_v12(
+    production_job_id: str, payload: LtxVendorBindingRequestV12,
+    request: Request, response: Response,
+) -> LtxVendorBindingReceiptV12:
+    # 01. Bind the exact acknowledged generation; no new attempt or render.
+    response.headers["Cache-Control"] = "no-store, private"
+    return execute_production(lambda: bind_ltx_vendor_generation(
         request.app.state.services.production, production_job_id, payload,
     ))
 
