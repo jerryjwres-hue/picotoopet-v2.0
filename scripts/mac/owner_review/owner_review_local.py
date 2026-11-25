@@ -191,7 +191,8 @@ def urllib_http(method: str, url: str, body: Optional[Dict[str, Any]],
     except urllib.error.HTTPError as error:
         try:
             detail = json.loads(error.read().decode("utf-8"))
-            code = detail.get("code") or detail.get("detail", {}).get("code") or ""
+            envelope = detail.get("error") or detail.get("detail") or detail
+            code = envelope.get("code", "") if isinstance(envelope, dict) else ""
         except Exception:  # noqa: BLE001 - report the HTTP status only
             code = ""
         _fail("OWNER_REVIEW_HTTP_{0}{1}".format(error.code, (":" + str(code)) if code else ""))

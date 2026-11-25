@@ -233,3 +233,33 @@ def test_every_request_path_exists_in_the_core_openapi_contract():
                ask=_answers("u", "n", "确认提交"), out=io.StringIO())
     used = {url.split("http://127.0.0.1:8766", 1)[1] for _, url, _, _ in api.calls}
     assert len(used) == 3 and used <= templates
+
+
+def test_http_error_reports_core_error_code_from_error_envelope():
+    """Regression 2026-11-25: real Mac printed only OWNER_REVIEW_HTTP_409 without the code."""
+
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            body = json.dumps({"error": {"code": "OWNER_REVIEW_GOAL_SOURCE_INVALID",
+                                         "message": "x", "retryable": False}}).encode()
+            self.send_response(409)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with pytest.raises(SystemExit) as raised:
+            cli.urllib_http("GET", "http://127.0.0.1:%d/api/v1/x" % server.server_port, None, {})
+        assert str(raised.value) == "OWNER_REVIEW_HTTP_409:OWNER_REVIEW_GOAL_SOURCE_INVALID"
+    finally:
+        server.shutdown()
