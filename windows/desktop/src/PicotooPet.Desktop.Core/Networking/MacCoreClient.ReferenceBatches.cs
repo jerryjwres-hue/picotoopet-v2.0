@@ -17,6 +17,14 @@ public interface IReviewedThreeShotPlanGateway : IReferenceBatchGateway
     Task<ProductionPlanRecord> ReadReviewedProductionPlanAsync(string jobId, CancellationToken cancellationToken);
 }
 
+// 01. The explicit LTX freeze capability is independent of Wan creation.
+public interface IReviewedLtxPilotGateway : IReferenceBatchGateway
+{
+    Task<ProductionJobRecord> FreezeReviewedLtxPilotAsync(string creativePackageId,
+        string approvalId, string idempotencyKey, CancellationToken cancellationToken);
+    Task<System.Text.Json.JsonElement> ReadReviewedLtxPlanAsync(string jobId, CancellationToken cancellationToken);
+}
+
 public sealed partial class MacCoreClient : IReferenceBatchGateway
 {
     public async Task<ReferenceBatchReceipt> RegisterReferenceBatchAsync(

@@ -323,8 +323,8 @@ public partial class ReferenceBatchPreviewPanel : UserControl
     {
         if (DataContext is not ReferenceBatchPreviewViewModel vm || !vm.CanCreateReviewedPlan) return;
         // 独立显式操作：不会由收到 Approved 回执自动触发。
-        if (System.Windows.MessageBox.Show("创建与当前三张已批参考图绑定的生产计划？此操作不启动 GPU。",
-                "确认三镜头生产计划", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        if (System.Windows.MessageBox.Show(vm.ReviewedPlanLabel + "？此操作不启动 GPU。",
+                "确认冻结生产计划", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
         try { await vm.CreateReviewedPlanAsync(); }
         catch (Exception) { OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, vm.StatusText); }
     }

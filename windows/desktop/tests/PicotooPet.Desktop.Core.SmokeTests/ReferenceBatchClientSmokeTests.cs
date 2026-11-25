@@ -21,6 +21,7 @@ internal static class ReferenceBatchClientSmokeTests
         await SendsExactAuthenticatedRegistrationAndReadsAsync();
         ValidatesRequestBoundsAndScope();
         BindsEveryReceiptField();
+        BindsLtxScopeWithoutChangingWan();
         DerivesStableRequestKey();
         await RejectsMismatchedServerReceiptAsync();
         await RejectsInvalidGetAndOversizedReceiptAsync();
@@ -127,6 +128,25 @@ internal static class ReferenceBatchClientSmokeTests
             registered with { Sha256 = B }, registered with { Bytes = 124 },
             registered with { SourceReference = "LICENSED" }, registered with { SourceDigest = A }
         }) Reject(() => ReferenceBatchValidation.ValidateReceipt(request, receipt with { References = [value] }));
+    }
+
+    // 01. Real client contract: one LTX reference needs explicit scoped
+    //     receipt; Wan omission remains backward compatible, never interchangeable.
+    private static void BindsLtxScopeWithoutChangingWan()
+    {
+        var wan = Request();
+        var ltx = wan with { SelectedReferences = [wan.SelectedReferences[0] with
+            { RightsScope = ReferenceBatchValidation.LtxRightsScope }] };
+        var scoped = Receipt() with { RightsScope = ReferenceBatchValidation.LtxRightsScope };
+        ReferenceBatchValidation.ValidateReceipt(ltx, scoped);
+        Reject(() => ReferenceBatchValidation.ValidateReceipt(ltx, Receipt()));
+        Reject(() => ReferenceBatchValidation.ValidateReceipt(wan, scoped));
+        var second = ltx.SelectedReferences[0] with { ShotId = "shot-2",
+            InputRelativePath = "PicotooPet/references/b.png" };
+        Reject(() => ReferenceBatchValidation.ValidateRequest(ltx with { SelectedReferences = [ltx.SelectedReferences[0], second] }));
+        Reject(() => ReferenceBatchValidation.ValidateRequest(wan with { SelectedReferences = [wan.SelectedReferences[0], second] }));
+        SmokeAssert.True(ReferenceBatchValidation.IdempotencyKey(ltx) != ReferenceBatchValidation.IdempotencyKey(wan),
+            "Renderer consent must change immutable request identity");
     }
 
     private static void DerivesStableRequestKey()

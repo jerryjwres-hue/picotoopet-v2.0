@@ -4,7 +4,7 @@ using PicotooPet.Desktop.Core.Networking;
 namespace PicotooPet.Desktop.Services;
 
 /// <summary>复用现有 Core 配对凭证提交待审核参考图片；此处绝不直接批准或启动 GPU。</summary>
-public sealed partial class ControlCenterSession : IReviewedThreeShotPlanGateway
+public sealed partial class ControlCenterSession : IReviewedThreeShotPlanGateway, IReviewedLtxPilotGateway
 {
     public async Task<ReferenceBatchReceipt> RegisterReferenceBatchAsync(
         ReferenceBatchRequest request, string idempotencyKey, CancellationToken cancellationToken)
@@ -23,6 +23,20 @@ public sealed partial class ControlCenterSession : IReviewedThreeShotPlanGateway
 
     public Task<ProductionPlanRecord> ReadReviewedProductionPlanAsync(string jobId, CancellationToken cancellationToken)
         => GetProductionPlanAsync(jobId, cancellationToken);
+
+    // 01. Same paired session, existing frozen v1.2 contract; no lease or GPU.
+    public async Task<ProductionJobRecord> FreezeReviewedLtxPilotAsync(string creativePackageId,
+        string approvalId, string idempotencyKey, CancellationToken cancellationToken)
+    {
+        using var client = CreateWorkerChallengePreflightClient();
+        return await client.FreezeLtxPilotAsync(creativePackageId, approvalId, idempotencyKey, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<System.Text.Json.JsonElement> ReadReviewedLtxPlanAsync(string jobId, CancellationToken cancellationToken)
+    {
+        using var client = CreateWorkerChallengePreflightClient();
+        return await client.GetLtxPlanAsync(jobId, cancellationToken).ConfigureAwait(false);
+    }
 
     public async Task<ReferenceBatchReceipt> GetReferenceBatchAsync(string approvalId, CancellationToken cancellationToken)
     {

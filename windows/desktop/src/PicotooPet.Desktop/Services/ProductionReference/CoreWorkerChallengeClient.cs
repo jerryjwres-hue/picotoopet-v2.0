@@ -818,6 +818,19 @@ internal sealed class CoreWorkerChallengeClient : IDisposable
     }
 
     // 01. Historical frozen plan readback uses the same paired session.
+    // 01. Explicit held reservation only, using the already paired Core.
+    internal async Task<ProductionJobRecord> FreezeLtxPilotAsync(string packageId, string approvalId,
+        string key, CancellationToken ct)
+    {
+        if (!Guid.TryParseExact(packageId, "D", out _) || !Guid.TryParseExact(approvalId, "D", out _)
+            || string.IsNullOrWhiteSpace(key) || key.Length > 200)
+            throw Invalid("LTX_FREEZE_REQUEST_INVALID");
+        using var result = await PostAsync("api/v1/production/jobs/v1.2/freeze",
+            new { creative_package_id = packageId, approved_reference_id = approvalId, idempotency_key = key },
+            HttpStatusCode.OK, ct).ConfigureAwait(false);
+        return result.RootElement.Deserialize<ProductionJobRecord>() ?? throw Invalid("LTX_FREEZE_RECEIPT_INVALID");
+    }
+
     internal async Task<JsonElement> GetLtxPlanAsync(string jobId, CancellationToken ct)
     {
         if (!Guid.TryParseExact(jobId, "D", out _)) throw Invalid("LTX_PLAN_JOB_INVALID");

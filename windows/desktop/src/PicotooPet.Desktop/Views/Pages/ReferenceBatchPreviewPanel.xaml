@@ -183,7 +183,7 @@
     <Button x:Name="RefreshBatchButton" Content="刷新 Core 回执" Padding="12,7" Margin="0,0,8,8" IsEnabled="{Binding CanRefresh, FallbackValue=False}" Click="RefreshBatch_Click" />
     <Button x:Name="OpenApprovalsButton" Content="打开审批中心" Padding="12,7" Margin="0,0,0,8" Click="OpenApprovals_Click" />
    </WrapPanel>
-   <Button x:Name="CreateReviewedPlanButton" Content="创建已审核的三镜头生产计划（不启动 GPU）"
+   <Button x:Name="CreateReviewedPlanButton" Content="{Binding ReviewedPlanLabel, FallbackValue=创建已审核生产计划}"
            HorizontalAlignment="Left" Padding="12,7" Margin="0,0,0,8"
            IsEnabled="{Binding CanCreateReviewedPlan, FallbackValue=False}" Click="CreateReviewedPlan_Click" />
    <TextBlock Text="{Binding CreatedProductionJob.ProductionJobId, StringFormat=生产 Job：{0}}" TextWrapping="Wrap" />

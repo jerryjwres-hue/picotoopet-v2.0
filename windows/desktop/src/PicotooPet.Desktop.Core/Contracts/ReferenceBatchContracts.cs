@@ -43,12 +43,15 @@ public sealed record ReferenceBatchReceipt(
     [property: JsonPropertyName("creative_package_id")] string CreativePackageId,
     [property: JsonPropertyName("creative_package_digest")] string CreativePackageDigest,
     [property: JsonPropertyName("goal_id")] string GoalId,
-    [property: JsonPropertyName("references")] RegisteredReferenceRecord[] References);
+    [property: JsonPropertyName("references")] RegisteredReferenceRecord[] References,
+    // 01. Legacy Wan receipts omit this field; LTX must echo its exact scope.
+    [property: JsonPropertyName("rights_scope"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? RightsScope = null);
 
 public static class ReferenceBatchValidation
 {
     private const string Schema = "reference_batch.v1";
-    private const string RightsScope = "wan22.i2v.production.v1";
+    public const string WanRightsScope = "wan22.i2v.production.v1";
+    public const string LtxRightsScope = "ltx.desktop.local.i2v.production.v1";
     private const long MaxBytes = 32L * 1024 * 1024;
 
     public static void ValidateRequest(ReferenceBatchRequest request)
@@ -64,6 +67,11 @@ public static class ReferenceBatchValidation
 
         var shots = new HashSet<string>(StringComparer.Ordinal);
         var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // 02. The current LTX pilot freezes exactly one reference. Never mix scopes.
+        if (request.SelectedReferences.Any(x => x is null)
+            || request.SelectedReferences.Select(x => x.RightsScope).Distinct(StringComparer.Ordinal).Count() != 1
+            || (request.SelectedReferences[0].RightsScope == LtxRightsScope && request.SelectedReferences.Length != 1))
+            throw new ArgumentException("REFERENCE_BATCH_SCOPE_INVALID", nameof(request));
         foreach (var candidate in request.SelectedReferences)
         {
             if (candidate is null || !IsCandidate(candidate)
@@ -81,7 +89,8 @@ public static class ReferenceBatchValidation
         if (receipt.GoalId != request.GoalId
             || receipt.CreativePackageId != request.CreativePackageId
             || receipt.CreativePackageDigest != request.CreativePackageDigest
-            || receipt.References.Length != request.SelectedReferences.Length)
+            || receipt.References.Length != request.SelectedReferences.Length
+            || (receipt.RightsScope ?? WanRightsScope) != request.SelectedReferences[0].RightsScope)
         {
             throw new InvalidDataException("REFERENCE_BATCH_RECEIPT_MISMATCH");
         }
@@ -121,7 +130,9 @@ public static class ReferenceBatchValidation
             || !IsUuid(receipt.GoalId) || !IsUuid(receipt.CreativePackageId)
             || !IsDigest(receipt.CreativePackageDigest) || !IsDigest(receipt.ApprovalRequestDigest)
             || receipt.Status is not ("Pending" or "Approved" or "Rejected" or "Revoked" or "Expired")
-            || receipt.ExpiresAt == default || receipt.References is not { Length: >= 1 and <= 12 })
+            || receipt.ExpiresAt == default || receipt.References is not { Length: >= 1 and <= 12 }
+            || receipt.RightsScope is not (null or LtxRightsScope)
+            || (receipt.RightsScope == LtxRightsScope && receipt.References.Length != 1))
         {
             throw new InvalidDataException("REFERENCE_BATCH_RECEIPT_INVALID");
         }
@@ -134,7 +145,7 @@ public static class ReferenceBatchValidation
             if (reference is null || !IsUuid(reference.AssetId)
                 || !assets.Add(Guid.Parse(reference.AssetId))
                 || !IsCandidate(new ReferenceCandidate(reference.ShotId, reference.InputRelativePath,
-                    reference.Sha256, reference.Bytes, reference.SourceReference, reference.SourceDigest, RightsScope))
+                    reference.Sha256, reference.Bytes, reference.SourceReference, reference.SourceDigest, receipt.RightsScope ?? WanRightsScope))
                 || !shots.Add(reference.ShotId) || !paths.Add(reference.InputRelativePath))
             {
                 throw new InvalidDataException("REFERENCE_BATCH_RECEIPT_INVALID");
@@ -148,7 +159,7 @@ public static class ReferenceBatchValidation
         && IsManagedPath(candidate.InputRelativePath)
         && IsDigest(candidate.Sha256) && candidate.Bytes is > 0 and <= MaxBytes
         && candidate.SourceReference is "USER_SUPPLIED" or "LICENSED"
-        && IsDigest(candidate.SourceDigest) && candidate.RightsScope == RightsScope;
+        && IsDigest(candidate.SourceDigest) && candidate.RightsScope is WanRightsScope or LtxRightsScope;
 
     private static bool IsDigest(string? value) =>
         value is { Length: 64 } && value.All(x => x is >= '0' and <= '9' or >= 'a' and <= 'f');
