@@ -326,6 +326,100 @@ internal sealed class CoreWorkerChallengeClient : IDisposable
         // 05. Preserve Submitted until decoded media and Core settlement.
     }
 
+    // 06. Collect the exact already-submitted local generation. This does not
+    //     submit or retry a render. The existing final QA process runner is reused.
+    //     Caller owns the shared GPU lock; no separate renderer or worker.
+    internal async Task<JsonElement> CollectCompletedLtxCandidateAsync(LtxClaim claim,
+        LtxDesktopLocalI2vPreflightClient vendor, string outputRoot,
+        ProductionSubmissionJournal journal, ProductionSubmissionJournal.GpuLease gpu,
+        CancellationToken ct)
+    {
+        gpu.RequireOwnedBy(journal);
+        var marker = journal.Read(claim.JobId, claim.TaskId);
+        if (marker is null || !marker.IsLtx || marker.Phase != "Submitted"
+            || marker.PlanDigest != claim.PlanDigest || marker.GraphDigest != claim.IntentDigest
+            || !Guid.TryParseExact(claim.JobId, "D", out _)
+            || !Guid.TryParseExact(claim.TaskId, "D", out _)
+            || !Guid.TryParseExact(marker.PromptId, "D", out _)
+            || !Guid.TryParseExact(marker.VendorStartFrameAssetId, "D", out _))
+            throw Invalid("LTX_COLLECT_JOURNAL_SCOPE_INVALID");
+        if (!MasterVideoPathPolicy.IsSafeLocalFullyQualified(outputRoot) || !Directory.Exists(outputRoot))
+            throw Invalid("LTX_COLLECT_ROOT_INVALID");
+        // 07. Retain the same local output root; never accept a vendor path.
+        for (DirectoryInfo? parent = new(outputRoot); parent is not null; parent = parent.Parent)
+            if ((parent.Attributes & FileAttributes.ReparsePoint) != 0)
+                throw Invalid("LTX_COLLECT_ROOT_INVALID");
+        var directory = Path.GetFullPath(outputRoot);
+        foreach (var part in new[] { "PicotooPet", "ltx", claim.JobId, claim.TaskId })
+        {
+            directory = Path.Combine(directory, part);
+            ProductionLocalEnvironment.AssertNoLinkEscape(outputRoot, directory);
+            Directory.CreateDirectory(directory);
+            ProductionLocalEnvironment.AssertNoLinkEscape(outputRoot, directory);
+        }
+        await CheckLtxLeaseAsync(claim, journal, gpu, true, ct).ConfigureAwait(false);
+        await BindLtxGenerationAsync(claim, journal, gpu, ct).ConfigureAwait(false);
+        var expected = new LtxDesktopGenerationExpectation(marker.PromptId!, marker.VendorStartFrameAssetId!,
+            claim.Plan.GetProperty("prompt").GetString() ?? throw Invalid("LTX_COLLECT_PLAN_INVALID"),
+            claim.Plan.GetProperty("seed").GetInt32());
+        var candidate = await vendor.ExportCompletedCandidateAsync(expected, directory, ct).ConfigureAwait(false);
+        var inspection = candidate.Inspection;
+        var fileName = expected.GenerationId + "-video-" + inspection.VideoAssetId + ".mp4";
+        if (!inspection.ResultIsLocal || inspection.Lane != "local" || !inspection.MediaBytesDownloaded
+            || inspection.GenerationId != expected.GenerationId || inspection.MediaType != "video/mp4"
+            || !Guid.TryParseExact(inspection.VideoAssetId, "D", out _)
+            || candidate.LocalFileName != fileName)
+            throw Invalid("LTX_COLLECT_MEDIA_UNVERIFIED");
+        var file = Path.Combine(directory, fileName);
+        ProductionLocalEnvironment.AssertNoLinkEscape(outputRoot, file);
+        // 08. Hold the downloaded bytes against writes across the real decode
+        //     AND Core settlement. An exported header alone is not a video pass.
+        await using var pin = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read);
+        var facts = await new FinalVideoQaMediaProbe(new FixedMasterVideoProcessRunner())
+            .VerifyLtxCandidateAsync(file, candidate.Sha256, candidate.Bytes, ct).ConfigureAwait(false);
+        await CheckLtxLeaseAsync(claim, journal, gpu, false, ct).ConfigureAwait(false);
+        var relative = "PicotooPet/ltx/" + claim.JobId + "/" + claim.TaskId + "/" + fileName;
+        var route = "api/v1/production/jobs/" + Uri.EscapeDataString(claim.JobId) + "/ltx-candidate/result";
+        using var response = await PostAsync(route, new
+        {
+            executor_id = claim.ExecutorId, lease_token = claim.LeaseToken,
+            production_attempt_id = claim.AttemptId, plan_digest = claim.PlanDigest,
+            vendor_intent_digest = claim.IntentDigest, generation_id = expected.GenerationId,
+            start_frame_asset_id = expected.StartFrameAssetId, video_asset_id = inspection.VideoAssetId,
+            output_relpath = relative, output_sha256 = candidate.Sha256, output_bytes = candidate.Bytes,
+            mime_type = "video/mp4", width = facts.Width, height = facts.Height,
+            frame_count = facts.FrameCount, fps = facts.Fps, duration_ms = facts.DurationMs,
+            lane = "local", decode_verified = true,
+        }, HttpStatusCode.OK, ct).ConfigureAwait(false);
+        var body = response.RootElement;
+        Shape(body, "schema_version production_job_id production_task_id production_attempt_id plan_digest vendor_intent_digest generation_id start_frame_asset_id video_asset_id output_relpath output_sha256 output_bytes mime_type width height frame_count fps duration_ms lane decode_verified job_status review_required mac_bytes_verified");
+        if (body.GetProperty("schema_version").GetString() != "production.ltx.candidate.v1"
+            || body.GetProperty("production_job_id").GetString() != claim.JobId
+            || body.GetProperty("production_task_id").GetString() != claim.TaskId
+            || body.GetProperty("production_attempt_id").GetString() != claim.AttemptId
+            || body.GetProperty("plan_digest").GetString() != claim.PlanDigest
+            || body.GetProperty("vendor_intent_digest").GetString() != claim.IntentDigest
+            || body.GetProperty("generation_id").GetString() != expected.GenerationId
+            || body.GetProperty("start_frame_asset_id").GetString() != expected.StartFrameAssetId
+            || body.GetProperty("video_asset_id").GetString() != inspection.VideoAssetId
+            || body.GetProperty("output_relpath").GetString() != relative
+            || body.GetProperty("output_sha256").GetString() != candidate.Sha256
+            || body.GetProperty("output_bytes").GetInt64() != candidate.Bytes
+            || body.GetProperty("mime_type").GetString() != "video/mp4"
+            || body.GetProperty("width").GetInt32() != facts.Width || body.GetProperty("height").GetInt32() != facts.Height
+            || body.GetProperty("frame_count").GetInt32() != facts.FrameCount || body.GetProperty("fps").GetInt32() != facts.Fps
+            || body.GetProperty("duration_ms").GetInt32() != facts.DurationMs
+            || body.GetProperty("lane").GetString() != "local" || !body.GetProperty("decode_verified").GetBoolean()
+            || body.GetProperty("job_status").GetString() != "NeedsHuman"
+            || !body.GetProperty("review_required").GetBoolean() || body.GetProperty("mac_bytes_verified").GetBoolean())
+            throw Invalid("LTX_COLLECT_RECEIPT_INVALID");
+        gpu.RequireOwnedBy(journal);
+        // 09. Only an exact durable Core receipt clears the pending marker.
+        //     Lost responses retain Submitted; never replace the output file.
+        journal.Save(marker with { Phase = "Settled" });
+        return body.Clone();
+    }
+
     // 04. Existing paired transport, same reservation; no additional claim.
     internal async Task<DateTimeOffset> CheckLtxLeaseAsync(LtxClaim claim,
         ProductionSubmissionJournal journal, ProductionSubmissionJournal.GpuLease gpu,
