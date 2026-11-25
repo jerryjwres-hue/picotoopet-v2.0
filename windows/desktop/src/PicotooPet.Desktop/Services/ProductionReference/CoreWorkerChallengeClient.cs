@@ -291,6 +291,41 @@ internal sealed class CoreWorkerChallengeClient : IDisposable
             token!, expires, planDigest, intentDigest, plan.Clone());
     }
 
+    // 04. Bind only the vendor IDs already persisted by the existing LTX
+    //     submission transport. A lost Core response permits exact rebind,
+    //     never another upload or generation. No media success is asserted.
+    internal async Task BindLtxGenerationAsync(LtxClaim claim,
+        ProductionSubmissionJournal journal, ProductionSubmissionJournal.GpuLease gpu,
+        CancellationToken ct)
+    {
+        gpu.RequireOwnedBy(journal);
+        var marker = journal.Read(claim.JobId, claim.TaskId);
+        if (marker is null || !marker.IsLtx || marker.Phase != "Submitted"
+            || marker.PlanDigest != claim.PlanDigest || marker.GraphDigest != claim.IntentDigest
+            || !Guid.TryParseExact(marker.PromptId, "D", out var generation)
+            || !Guid.TryParseExact(marker.VendorStartFrameAssetId, "D", out var asset)
+            || generation == Guid.Empty || asset == Guid.Empty)
+            throw Invalid("LTX_VENDOR_BIND_JOURNAL_SCOPE_INVALID");
+        var route = "api/v1/production/jobs/" + Uri.EscapeDataString(claim.JobId) + "/ltx-vendor/bind";
+        using var result = await PostAsync(route, new { executor_id = claim.ExecutorId, lease_token = claim.LeaseToken,
+            production_attempt_id = claim.AttemptId, plan_digest = claim.PlanDigest,
+            vendor_intent_digest = claim.IntentDigest, generation_id = generation.ToString("D"),
+            start_frame_asset_id = asset.ToString("D") }, HttpStatusCode.OK, ct).ConfigureAwait(false);
+        var receipt = result.RootElement;
+        Shape(receipt, "schema_version production_job_id production_task_id production_attempt_id plan_digest vendor_intent_digest generation_id start_frame_asset_id");
+        if (receipt.GetProperty("schema_version").GetString() != "production.ltx.vendor_binding.v1"
+            || receipt.GetProperty("production_job_id").GetString() != claim.JobId
+            || receipt.GetProperty("production_task_id").GetString() != claim.TaskId
+            || receipt.GetProperty("production_attempt_id").GetString() != claim.AttemptId
+            || receipt.GetProperty("plan_digest").GetString() != claim.PlanDigest
+            || receipt.GetProperty("vendor_intent_digest").GetString() != claim.IntentDigest
+            || receipt.GetProperty("generation_id").GetString() != generation.ToString("D")
+            || receipt.GetProperty("start_frame_asset_id").GetString() != asset.ToString("D"))
+            throw Invalid("LTX_VENDOR_BIND_RECEIPT_INVALID");
+        gpu.RequireOwnedBy(journal);
+        // 05. Preserve Submitted until decoded media and Core settlement.
+    }
+
     // 04. Existing paired transport, same reservation; no additional claim.
     internal async Task<DateTimeOffset> CheckLtxLeaseAsync(LtxClaim claim,
         ProductionSubmissionJournal journal, ProductionSubmissionJournal.GpuLease gpu,
