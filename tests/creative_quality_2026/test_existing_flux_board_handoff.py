@@ -25,15 +25,15 @@ def build(job, seed, ref_names):
     # 01. Distinct fake nodes intentionally exercise the exact requested
     #     prompt/seed/model/LoadImage/SaveImage values without GPU.
     g = {
-        "4": {"inputs": {"text": job["prompt"]}},
+        "4": {"class_type": "CLIPTextEncode", "inputs": {"text": job["prompt"]}},
         "6": {"class_type": "LoraLoaderModelOnly", "inputs": {
             "strength_model": job["lora"]["strength"]}},
-        "20": {"inputs": {"width": job["w"], "height": job["h"]}},
-        "23": {"inputs": {"noise_seed": seed}},
-        "27": {"inputs": {"filename_prefix": "PTV2_" + job["id"]}},
+        "20": {"class_type": "EmptyFlux2LatentImage", "inputs": {"width": job["w"], "height": job["h"]}},
+        "23": {"class_type": "RandomNoise", "inputs": {"noise_seed": seed}},
+        "27": {"class_type": "SaveImage", "inputs": {"filename_prefix": "PTV2_" + job["id"]}},
     }
     for i, name in enumerate(ref_names):
-        g[str(100+10*i)] = {"inputs": {"image": name}}
+        g[str(100+10*i)] = {"class_type": "LoadImage", "inputs": {"image": name}}
     return g
 '''
 
@@ -228,6 +228,10 @@ class ExistingFluxBoardHandoffTests(unittest.TestCase):
         self.assertEqual([x["shot_id"] for x in batch["shots"]], ["shot-1", "shot-2", "shot-3"])
         self.assertEqual(len({x["seed"] for x in batch["shots"]}), 3)
         self.assertFalse(batch["production_authorized"])
+        jobs = (self.root / "batch" / "flux_board_jobs.json").read_bytes()
+        self.assertEqual(_sha(jobs), batch["runner_jobs_sha256"])
+        self.assertEqual(len(json.loads(jobs)["jobs"]), 3)
+        self.assertEqual(json.loads(jobs)["out"], batch["runner_output_directory"])
         for record in batch["shots"]:
             folder = self.root / "batch" / record["relative_directory"]
             raw = (folder / "flux_board_candidate_api_graph.json").read_bytes()
@@ -281,6 +285,21 @@ class ExistingFluxBoardHandoffTests(unittest.TestCase):
         self.assertEqual(result["shots"][0]["candidates"][0]["sha256"], _sha((output / "frame.png").read_bytes()))
         self.assertFalse(result["reference_approved"])
         self.assertEqual(result["gpu_post"], 0)
+        # 02. The original runner shuts down Comfy; copied PNG retains exact
+        #     embedded API graph. No fabricated history or prompt ID.
+        import struct
+        import zlib
+        meta = b"prompt\x00" + canonical_bytes(graph)
+        chunk = struct.pack(">I", len(meta)) + b"tEXt" + meta + struct.pack(">I", zlib.crc32(b"tEXt" + meta) & 0xffffffff)
+        plain = png(864, 1536)
+        prepared = json.loads((batch / "batch_manifest.json").read_bytes())
+        copied = output / prepared["shots"][0]["runner_output_filename"]
+        copied.write_bytes(plain[:-12] + chunk + plain[-12:])
+        embedded = collect_flux_batch(batch, None, output)
+        self.assertEqual(embedded["history_provenance"], "PNG_EMBEDDED_NO_HISTORY")
+        self.assertFalse(embedded["comfy_history_success_verified"])
+        self.assertIsNone(embedded["shots"][0]["prompt_id"])
+        self.assertTrue(embedded["shots"][0]["candidates"][0]["embedded_prompt_graph_verified"])
         with self.assertRaisesRegex(ValueError, "FLUX_CANDIDATE_HISTORY_MISSING_OR_AMBIGUOUS"):
             collect_flux_batch(batch, {}, output)
         (output / "frame.png").write_bytes(png(720, 1280))

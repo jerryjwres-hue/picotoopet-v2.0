@@ -179,7 +179,10 @@ def prepare(
             "sha256": expected_sha, "bytes": len(data),
         })
         legacy_refs.append(relative)
-    if len(set(legacy_refs)) != len(legacy_refs):
+    # 01. The original runner stages by basename; two different directories
+    #     with the same basename would silently bind the last copied image.
+    if (len(set(legacy_refs)) != len(legacy_refs)
+        or len({Path(item).name.casefold() for item in legacy_refs}) != len(legacy_refs)):
         raise _bad("DUPLICATE_REFERENCES")
 
     # 06. The current LoRA is v2 only; archived v1 is never a fallback.
@@ -311,7 +314,7 @@ def prepare_package_batch(*, package_file: Path, package_sha: str,
         raise _bad("CORE_SHOT_REFERENCES_MISSING")
     if output_dir.exists() or output_dir.is_symlink() or not output_dir.parent.is_dir():
         raise _bad("OUTPUT_DIR_MUST_BE_NEW")
-    records = []
+    records, jobs = [], []
     # 02. Stage the entire batch privately. Missing or changed references in
     #     shot 3 must not publish a partial shot 1/2 export.
     with tempfile.TemporaryDirectory(prefix=".flux-batch-", dir=output_dir.parent) as staging:
@@ -339,7 +342,13 @@ def prepare_package_batch(*, package_file: Path, package_sha: str,
             folder.mkdir()
             result = prepare(request_file=request_path, runner_file=runner_file,
                              lora_file=lora_file, output_dir=folder)
+            # 03b. The original runner main() accepts one jobs file, loops
+            #      through jobs sequentially, and copies each output as id_v1.png.
+            single = _read_json(folder / "flux_board_single_job.json")
+            job = single["jobs"][0]
+            jobs.append(job)
             records.append({
+                "runner_output_filename": job["id"] + "_v1.png",
                 "shot_id": shot_id, "order": order, "seed": seed,
                 "relative_directory": folder.name,
                 "api_graph_sha256": result["api_graph_sha256"],
@@ -348,8 +357,19 @@ def prepare_package_batch(*, package_file: Path, package_sha: str,
                 "still_prompt_sha256": _sha(frame["still_prompt"].encode("utf-8")),
                 "review_checklist": frame["review_checklist"],
             })
+        # 04. Unique batch destination under the original runner directory.
+        #     Preparation does not execute the GPU or create the destination.
+        suffix = "all" if selected_shot is None else f"s{wanted[0]['order']:02d}"
+        runner_out = f"keyframes_p0_{package_sha[:16]}_v{variant:05d}_{suffix}"
+        if (runner_file.parent / runner_out).exists() or (runner_file.parent / runner_out).is_symlink():
+            raise _bad("RUNNER_OUTPUT_ALREADY_EXISTS")
+        runner_jobs = json.dumps({"out": runner_out, "jobs": jobs}, sort_keys=True,
+                                 ensure_ascii=False, separators=(",", ":")).encode("utf-8") + b"\n"
+        (payload / "flux_board_jobs.json").write_bytes(runner_jobs)
         manifest = {
             "schema": "picotoo.existing-flux-board-batch.v1",
+            "runner_output_directory": runner_out,
+            "runner_jobs_sha256": _sha(runner_jobs),
             "creative_package_id": package["creative_package_id"],
             "creative_package_sha256": package_sha, "keyframe_kit_digest": kit_digest,
             "variant": variant, "selected_shot": selected_shot, "shots": records,
