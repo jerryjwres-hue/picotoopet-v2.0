@@ -192,6 +192,27 @@ def compile_ltx_pilot_plan(
     )
 
 
+def recompile_frozen_ltx_plan(service: ProductionService, plan: LtxPilotPlanV12) -> LtxPilotPlanV12:
+    """Recheck the original selection against the current exact approved scope."""
+    # 01. Full consent requires explicit shot selection at every live check.
+    row = service.repository.database.fetchone(
+        "SELECT scope_json FROM approvals WHERE approval_id=?",
+        (plan.reference_asset.approval_id,),
+    )
+    if row is None:
+        raise ValueError("LTX_PLAN_REFERENCE_NOT_APPROVED")
+    scope = json.loads(row["scope_json"])
+    refs = scope.get("references") if isinstance(scope, dict) else None
+    if not isinstance(refs, list) or len(refs) not in (1, 3):
+        raise ValueError("LTX_PLAN_REFERENCE_SCOPE_MISMATCH")
+    return compile_ltx_pilot_plan(
+        service, production_job_id=plan.production_job_id,
+        creative_package_id=plan.creative_package_id,
+        approved_reference_id=plan.reference_asset.approval_id,
+        selected_shot_id=plan.shot_id if len(refs) == 3 else None,
+    )
+
+
 class LtxPilotFreezeRequestV12(BaseModel):
     """Explicit new-job request, not an upgrade or a GPU authorization."""
 
@@ -201,6 +222,16 @@ class LtxPilotFreezeRequestV12(BaseModel):
     idempotency_key: str = Field(min_length=1, max_length=200)
     # 01. Explicit shot selection is opt-in; old callers freeze shot one.
     selected_shot_id: str | None = Field(default=None, min_length=1, max_length=80)
+    # 02. Stable per-click reroll identity; the frozen plan schema is unchanged.
+    reroll_of_job_id: UUID | None = None
+    reroll_variant: UUID | None = None
+
+    @model_validator(mode="after")
+    def _reroll_pair(self) -> LtxPilotFreezeRequestV12:
+        if ((self.reroll_of_job_id is None) != (self.reroll_variant is None)
+            or self.reroll_of_job_id == UUID(int=0) or self.reroll_variant == UUID(int=0)):
+            raise ValueError("LTX_REROLL_IDENTITY_INVALID")
+        return self
 
 
 def freeze_ltx_pilot_job(
@@ -225,12 +256,56 @@ def freeze_ltx_pilot_job(
             or existing["creative_package_id"] != package_id
         ):
             raise ValueError("LTX_PLAN_IDEMPOTENCY_CONFLICT")
+        # 04. Only a settled exact source may be rerolled; never reopen an
+        #     uncertain vendor attempt or alter its original media evidence.
+        source_plan = None
+        if request.reroll_of_job_id is not None:
+            source_id = str(request.reroll_of_job_id)
+            if request.idempotency_key != f"reviewed-ltx-reroll-v12-{source_id}-{request.reroll_variant}":
+                raise ValueError("LTX_REROLL_KEY_MISMATCH")
+            source = connection.execute(
+                "SELECT * FROM production_jobs WHERE production_job_id=?", (source_id,),
+            ).fetchone()
+            if (source is None or source["status"] != "NeedsHuman"
+                or source["failure_code"] != "LTX_PILOT_REVIEW_REQUIRED"
+                or source["lease_executor_id"] is not None or source["lease_token_digest"] is not None
+                or source["lease_expires_at"] is not None):
+                raise ValueError("LTX_REROLL_SOURCE_NOT_SETTLED")
+            source_plan = load_frozen_ltx_pilot_plan(service, source_id)
+            if (source_plan.creative_package_id != package_id
+                or source_plan.reference_asset.approval_id != request.approved_reference_id
+                or request.selected_shot_id not in (None, source_plan.shot_id)
+                or recompile_frozen_ltx_plan(service, source_plan) != source_plan):
+                raise ValueError("LTX_REROLL_SOURCE_MISMATCH")
+            tasks = connection.execute(
+                "SELECT * FROM production_tasks WHERE production_job_id=?", (source_id,),
+            ).fetchall()
+            attempts = connection.execute(
+                "SELECT * FROM production_attempts WHERE production_job_id=?", (source_id,),
+            ).fetchall()
+            if (len(tasks) != 1 or len(attempts) != 1
+                or tasks[0]["production_task_id"] != source_plan.production_task_id
+                or tasks[0]["status"] != "Succeeded" or tasks[0]["attempt_count"] != 1
+                or attempts[0]["production_task_id"] != source_plan.production_task_id
+                or attempts[0]["status"] != "Succeeded" or not attempts[0]["ltx_result_digest"]):
+                raise ValueError("LTX_REROLL_SOURCE_NOT_SETTLED")
+        elif request.idempotency_key.startswith("reviewed-ltx-reroll-v12-"):
+            raise ValueError("LTX_REROLL_KEY_MISMATCH")
+
         job_id = existing["production_job_id"] if existing is not None else str(uuid4())
         plan = compile_ltx_pilot_plan(
             service, production_job_id=job_id, creative_package_id=package_id,
             approved_reference_id=request.approved_reference_id,
             selected_shot_id=request.selected_shot_id,
         )
+        if source_plan is not None:
+            # 05. New job-derived seed, same approved image and prompt.
+            #     Retry of the same variant returns the same frozen identity.
+            if (plan.shot_id != source_plan.shot_id or plan.prompt != source_plan.prompt
+                or plan.reference_asset.model_dump(exclude={"production_job_id", "production_task_id"})
+                != source_plan.reference_asset.model_dump(exclude={"production_job_id", "production_task_id"})
+                or plan.seed == source_plan.seed):
+                raise ValueError("LTX_REROLL_SOURCE_MISMATCH")
         digest = plan.digest()
         encoded = json.dumps(
             plan.model_dump(mode="json"), sort_keys=True,

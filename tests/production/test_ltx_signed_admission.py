@@ -25,7 +25,7 @@ from test_reference_registration_api import PACKAGE, candidate, payload, state, 
 
 
 @pytest.fixture()
-def pilot(state):
+def pilot(state, request):
     # 01. Use the existing real Core test repository and a synthetic portrait
     #     Creative ZIP. No production source, private media, or key enrollment.
     db, registration, approval, store, _ = state
@@ -39,13 +39,23 @@ def pilot(state):
         beat["duration_seconds"] = 4
     for shot in stages["shot_plan.v1"]["shots"]:
         shot["duration_seconds"] = 4
+        if getattr(request, "param", None) is not None:
+            shot["render_intent"] = "IMAGE_TO_VIDEO"
     location, digest = store.write_creative_package(PACKAGE, manifest)
     db.execute(
         "UPDATE creative_packages SET package_digest=?,package_relpath=?,manifest_json=? "
         "WHERE creative_package_id=?", (digest, location, json.dumps(manifest), PACKAGE),
     )
     raw = payload(digest)
+    # 01a. Exercise actual full consent, not just the first-shot legacy path.
+    selected_shot = getattr(request, "param", None)
     raw["selected_references"] = [dict(candidate("shot-a"), rights_scope=LTX_SCOPE)]
+    if selected_shot is not None:
+        raw["selected_references"] = [
+            dict(candidate(shot), rights_scope=LTX_SCOPE, sha256=char*64,
+                 input_relative_path=f"PicotooPet/references/{char*64}/{shot}.png")
+            for shot, char in zip(("shot-a", "shot-b", "shot-t"), "abc", strict=True)
+        ]
     receipt = registration.register(
         ReferenceBatchRequestV1.model_validate(raw), idempotency_key="ltx-claim-batch",
     )
@@ -57,7 +67,7 @@ def pilot(state):
     service = _v11_service(state)
     job = freeze_ltx_pilot_job(service, LtxPilotFreezeRequestV12(
         creative_package_id=PACKAGE, approved_reference_id=receipt.approval_id,
-        idempotency_key="ltx-claim-job",
+        idempotency_key="ltx-claim-job", selected_shot_id=selected_shot,
     ))
     plan = load_frozen_ltx_pilot_plan(service, job.production_job_id)
 
@@ -322,6 +332,7 @@ def test_ltx_vendor_binding_is_exact_idempotent_and_not_media_success(pilot):
         assert client.post(route, json=body).status_code == 409
 
 
+@pytest.mark.parametrize("pilot", [None, "shot-a", "shot-b", "shot-t"], indirect=True)
 def test_ltx_candidate_settles_one_shot_without_certifying_a_film(pilot):
     p = pilot
     with TestClient(p.app) as client:
@@ -376,3 +387,30 @@ def test_ltx_candidate_settles_one_shot_without_certifying_a_film(pilot):
         p.db.execute("UPDATE production_tasks SET output_sha256=?", ("a"*64,))
         assert client.get(route).json() == result.json()
         assert facts(p) == after
+
+        # 04. Reroll only this settled shot, keeping the original result.
+        variant = str(uuid4())
+        reroll = {
+            "creative_package_id": PACKAGE, "approved_reference_id": p.receipt.approval_id,
+            "selected_shot_id": p.plan.shot_id if len(p.receipt.references) == 3 else None,
+            "reroll_of_job_id": p.job.production_job_id, "reroll_variant": variant,
+            "idempotency_key": f"reviewed-ltx-reroll-v12-{p.job.production_job_id}-{variant}",
+        }
+        freeze = "/api/v1/production/jobs/v1.2/freeze"
+        new = client.post(freeze, json=reroll)
+        assert new.status_code == 200, new.text
+        new_id = new.json()["production_job_id"]
+        new_plan = load_frozen_ltx_pilot_plan(p.service, new_id)
+        assert new_id != p.job.production_job_id and new_plan.seed != p.plan.seed
+        assert new_plan.shot_id == p.plan.shot_id and new_plan.prompt == p.plan.prompt
+        assert new_plan.reference_asset.sha256 == p.plan.reference_asset.sha256
+        assert client.post(freeze, json=reroll).json() == new.json()
+        assert p.db.scalar("SELECT COUNT(*) FROM production_attempts") == 1
+        assert p.db.scalar("SELECT COUNT(*) FROM production_tasks") == 1
+        assert p.db.scalar("SELECT COUNT(*) FROM production_jobs") == 2
+        assert client.get(route).json() == result.json()
+        assert client.post(freeze, json=dict(reroll, selected_shot_id="unrelated")).status_code == 409
+        p.registration.revoke(p.receipt.approval_id, request_digest=p.receipt.approval_request_digest,
+                              reason="fixture revoke")
+        assert client.post(freeze, json=reroll).status_code == 409
+        assert p.db.scalar("SELECT COUNT(*) FROM production_jobs") == 2

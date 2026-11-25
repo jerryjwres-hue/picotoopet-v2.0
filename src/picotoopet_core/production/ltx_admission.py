@@ -16,7 +16,7 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
 from picotoopet_core.security.worker_pairing import PairedWorkerTrust, _verify_ed25519
-from .ltx_plan import LtxPilotPlanV12, compile_ltx_pilot_plan, load_frozen_ltx_pilot_plan
+from .ltx_plan import LtxPilotPlanV12, recompile_frozen_ltx_plan, load_frozen_ltx_pilot_plan
 from .operator_trusted_host import require_b_key_locked
 from .service import ProductionService
 from .versioned_plan import WorkerWitnessV11
@@ -91,11 +91,7 @@ def check_ltx_reference(service: ProductionService, job_id: str,
     #     Historical plan readback alone must never authorize a snapshot.
     with service.repository.database.transaction():
         plan = load_frozen_ltx_pilot_plan(service, job_id)
-        current = compile_ltx_pilot_plan(
-            service, production_job_id=job_id,
-            creative_package_id=plan.creative_package_id,
-            approved_reference_id=plan.reference_asset.approval_id,
-        )
+        current = recompile_frozen_ltx_plan(service, plan)
         if (current != plan or plan.digest() != request.plan_digest
                 or vendor_intent_digest(plan) != request.vendor_intent_digest):
             raise ValueError("LTX_REFERENCE_CHECK_SCOPE_MISMATCH")
@@ -118,11 +114,7 @@ def _audit_untouched(service: ProductionService, connection, job_id: str,
         or row["lease_token_digest"] is not None
         or row["plan_digest"] != plan_digest):
         raise ValueError("LTX_CLAIM_NOT_UNTOUCHED")
-    current = compile_ltx_pilot_plan(
-        service, production_job_id=job_id,
-        creative_package_id=plan.creative_package_id,
-        approved_reference_id=plan.reference_asset.approval_id,
-    )
+    current = recompile_frozen_ltx_plan(service, plan)
     if current != plan or current.digest() != plan_digest:
         raise ValueError("LTX_CLAIM_FROZEN_SOURCE_CHANGED")
     for table in ("production_tasks", "production_attempts"):
@@ -293,11 +285,7 @@ def _check_ltx_lease_locked(service: ProductionService, connection, job_id: str,
         or job["plan_digest"] != request.plan_digest
         or vendor_intent_digest(plan) != request.vendor_intent_digest):
         raise ValueError("LTX_LEASE_SCOPE_INVALID")
-    current = compile_ltx_pilot_plan(
-        service, production_job_id=job_id,
-        creative_package_id=plan.creative_package_id,
-        approved_reference_id=plan.reference_asset.approval_id,
-    )
+    current = recompile_frozen_ltx_plan(service, plan)
     if current != plan:
         raise ValueError("LTX_LEASE_SOURCE_CHANGED")
 
