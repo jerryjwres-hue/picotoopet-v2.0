@@ -69,9 +69,14 @@ public sealed partial class LtxDesktopLocalI2vPreflightClient
         {
             throw new InvalidDataException("LTX_GENERATION_ID_CONFLICT");
         }
-        if (ReadText(generation, "status") != "succeeded")
+        var status = ReadText(generation, "status");
+        if (status != "succeeded")
         {
-            throw new InvalidOperationException("LTX_GENERATION_NOT_SUCCEEDED");
+            // 01. Only known active states are eligible for another GET.
+            //     A failed or unknown result remains pending, never rerendered.
+            if (status is "queued" or "running" or "pending" or "processing")
+                throw new InvalidOperationException("LTX_GENERATION_NOT_SUCCEEDED");
+            throw new InvalidOperationException("LTX_GENERATION_TERMINAL_OR_UNKNOWN");
         }
         if (ReadText(generation, "lane") != "local")
         {

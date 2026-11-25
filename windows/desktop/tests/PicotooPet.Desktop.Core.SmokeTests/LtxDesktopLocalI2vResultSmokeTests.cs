@@ -63,6 +63,10 @@ internal static class LtxDesktopLocalI2vResultSmokeTests
             root => root["lane"] = "cloud", client, handler, expect);
         await CheckBadAsync("not_done", "LTX_GENERATION_NOT_SUCCEEDED",
             root => root["status"] = "queued", client, handler, expect);
+        await CheckBadAsync("failed", "LTX_GENERATION_TERMINAL_OR_UNKNOWN",
+            root => root["status"] = "failed", client, handler, expect);
+        await CheckBadAsync("unknown_state", "LTX_GENERATION_TERMINAL_OR_UNKNOWN",
+            root => root["status"] = "unexpected", client, handler, expect);
         await CheckBadAsync("wrong_id", "LTX_GENERATION_ID_CONFLICT",
             root => root["id"] = "00000000-0000-4000-8000-000000000099",
             client, handler, expect);

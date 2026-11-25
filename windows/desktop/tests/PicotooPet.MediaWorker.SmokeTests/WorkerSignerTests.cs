@@ -153,6 +153,7 @@ internal static class WorkerSignerTests
         File.Delete(blob);
         Throws(() => ProtectedWorkerSigningKey.Open(root, executor, fingerprint));
         Throws(() => ProtectedWorkerSigningKey.Create(root, executor));
+        LtxDispatchPlan();
         await LtxMeasuredAsync();
         Console.WriteLine("P0_WORKER_DPAPI_RESTART_TAMPER_REPLAY=PASS; GPU_POSTS=0; I2V=BLOCKED");
     }
@@ -213,6 +214,43 @@ internal static class WorkerSignerTests
 
     // 01. Real Windows snapshot + existing protected key; fixture-only
     //     consent. The separate Core HTTP test exercises actual approval.
+    // 01. Real dispatch selector and frozen plan validation. Synthetic IDs
+    //     exercise both renderer separation and digest binding without GPU.
+    private static void LtxDispatchPlan()
+    {
+        using var fixture = new DurableReferenceSnapshotTests.Fixture();
+        var jobId = Guid.NewGuid().ToString("D");
+        var taskId = Guid.NewGuid().ToString("D");
+        var reference = fixture.Reference with { ProductionJobId = jobId,
+            ProductionTaskId = taskId, RightsScope = "ltx.desktop.local.i2v.production.v1" };
+        var plan = JsonSerializer.SerializeToNode(new
+        {
+            schema_version = "1.2", production_profile = "production.ltx.desktop.local.v1",
+            workflow_id = "ltx.desktop.local.i2v.v1", production_job_id = jobId,
+            creative_package_id = reference.CreativePackageId,
+            creative_package_digest = reference.CreativePackageDigest, project_key = "goal-goal",
+            source_output_profile = "video.vertical.v1", shot_id = reference.ShotId,
+            production_task_id = taskId, prompt = "synthetic test", seed = 73,
+            model = "ltx-2.5-fast", resolution = "720p", aspect_ratio = "9:16",
+            duration_seconds = 4, fps = 24, reference_asset = reference,
+        })!;
+        var now = DateTimeOffset.UtcNow;
+        var job = new ProductionJobRecord(jobId, reference.CreativePackageId,
+            reference.CreativePackageDigest, "goal-goal", "production.ltx.desktop.local.v1",
+            Hash(CanonicalJson.Serialize(plan)), "NeedsHuman", null, null,
+            "LTX_SIGNED_WORKER_NOT_ENABLED", null, "fixture", now, now, now);
+        Assert(LtxProductionExecutor.IsSelected(job), "explicit frozen LTX candidate recognized");
+        Assert(LtxProductionExecutor.ValidatePlan(job, JsonSerializer.SerializeToElement(plan)) == reference,
+            "exact frozen LTX reference identity");
+        Assert(!LtxProductionExecutor.IsSelected(job with { ProductionProfile = "production.comfyui.v1" }),
+            "Wan must never enter LTX executor");
+        Assert(!LtxProductionExecutor.IsSelected(job with { FailureCode = "LTX_PILOT_REVIEW_REQUIRED" }),
+            "completed candidate must never be dispatched again");
+        plan["seed"] = 74;
+        Throws(() => LtxProductionExecutor.ValidatePlan(job, JsonSerializer.SerializeToElement(plan)));
+        Console.WriteLine("P0_LTX_DISPATCH_PLAN_SCOPE=PASS; GPU_POSTS=0");
+    }
+
     private static async Task LtxMeasuredAsync()
     {
         using var f = new DurableReferenceSnapshotTests.Fixture();
