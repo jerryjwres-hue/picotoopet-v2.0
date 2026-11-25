@@ -76,8 +76,9 @@ class LtxPilotPlanV12(BaseModel):
 def compile_ltx_pilot_plan(
     service: ProductionService, *, production_job_id: str,
     creative_package_id: str, approved_reference_id: str,
+    selected_shot_id: str | None = None,
 ) -> LtxPilotPlanV12:
-    """Compile the FIRST approved shot from actual persisted Core records."""
+    """Compile one exact approved shot; legacy requests remain first-shot only."""
     # 03. Verify frozen source bytes and current goal/Creative lineage.
     job_id = str(UUID(production_job_id))
     package = service._creative_package_by_id(creative_package_id)
@@ -119,25 +120,38 @@ def compile_ltx_pilot_plan(
     ):
         raise ValueError("LTX_PLAN_REFERENCE_SCOPE_MISMATCH")
     refs = scope.get("references")
-    if not isinstance(refs, list) or len(refs) != 1 or not isinstance(refs[0], dict):
-        raise ValueError("LTX_PLAN_FIRST_SHOT_ONLY")
-    entry = refs[0]
-
-    # 05. Reuse Core's sealed-v2 bridge when necessary; preserve source profile.
-    #     Existing v1 packages must already designate the first shot as I2V.
+    # 05. Preserve the historical single-first-shot contract. An explicit
+    #     selection may use a complete three-shot consent, but never a partial
+    #     or duplicate image batch. Each resulting plan is still one task.
     shot_plan = manifest["stage_results"]["shot_plan.v1"]["shots"]
-    if not shot_plan or entry.get("shot_id") != shot_plan[0].get("shot_id"):
+    if not shot_plan or not isinstance(refs, list) or any(not isinstance(r, dict) for r in refs):
         raise ValueError("LTX_PLAN_FIRST_SHOT_ONLY")
+    if selected_shot_id is None:
+        if len(refs) != 1 or refs[0].get("shot_id") != shot_plan[0].get("shot_id"):
+            raise ValueError("LTX_PLAN_FIRST_SHOT_ONLY")
+        entry = refs[0]
+        approved_shots = {entry["shot_id"]}
+    else:
+        source_shots = {shot["shot_id"] for shot in shot_plan}
+        approved_shots = {item.get("shot_id") for item in refs}
+        if (len(shot_plan) != 3 or len(refs) != 3 or len(source_shots) != 3
+            or approved_shots != source_shots or selected_shot_id not in source_shots
+            or len({item.get("sha256") for item in refs}) != 3
+            or len({item.get("input_relative_path") for item in refs}) != 3
+            or any(shot.get("duration_seconds") != 4 for shot in shot_plan)):
+            raise ValueError("LTX_PLAN_FULL_SHOT_CONSENT_REQUIRED")
+        entry = next(item for item in refs if item["shot_id"] == selected_shot_id)
     sanitized = dict(manifest)
     sanitized["trusted_local_assets"] = {
-        entry["shot_id"]: entry["input_relative_path"],
+        item["shot_id"]: item["input_relative_path"] for item in refs
     }
-    if shot_plan[0]["render_intent"] != "IMAGE_TO_VIDEO":
+    if any(shot["render_intent"] != "IMAGE_TO_VIDEO" for shot in shot_plan
+           if shot["shot_id"] in approved_shots):
         sanitized = service._bridge_sealed_v2_manifest(
-            sanitized, creative, {entry["shot_id"]}, pilot_first_shot=True,
+            sanitized, creative, approved_shots, pilot_first_shot=selected_shot_id is None,
         )
     base = compile_production_plan(job_id, sanitized, package.package_digest)
-    first = base.tasks[0]
+    first = next(task for task in base.tasks if task.shot_id == entry["shot_id"])
     if (
         base.output_profile_id.value != "video.vertical.v1"
         or first.render_intent != "IMAGE_TO_VIDEO"
@@ -185,6 +199,8 @@ class LtxPilotFreezeRequestV12(BaseModel):
     creative_package_id: str
     approved_reference_id: str = Field(min_length=1, max_length=160)
     idempotency_key: str = Field(min_length=1, max_length=200)
+    # 01. Explicit shot selection is opt-in; old callers freeze shot one.
+    selected_shot_id: str | None = Field(default=None, min_length=1, max_length=80)
 
 
 def freeze_ltx_pilot_job(
@@ -213,6 +229,7 @@ def freeze_ltx_pilot_job(
         plan = compile_ltx_pilot_plan(
             service, production_job_id=job_id, creative_package_id=package_id,
             approved_reference_id=request.approved_reference_id,
+            selected_shot_id=request.selected_shot_id,
         )
         digest = plan.digest()
         encoded = json.dumps(

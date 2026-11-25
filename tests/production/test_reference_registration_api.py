@@ -768,3 +768,65 @@ def test_ltx_pilot_compiles_exact_frozen_first_frame_without_admission(state):
                ("0" * 64, frozen_job.production_job_id))
     with pytest.raises(ValueError, match="LTX_PLAN_PERSISTED_IDENTITY_MISMATCH"):
         load_frozen_ltx_pilot_plan(service, frozen_job.production_job_id)
+
+
+def test_ltx_full_consent_freezes_three_independent_existing_worker_jobs(state):
+    # 01. Use real Core storage, registration and approval; no inference or
+    #     additional task scheduler. Each held job binds exactly its own shot.
+    from picotoopet_core.production.ltx_plan import (
+        LTX_SCOPE, LtxPilotFreezeRequestV12, freeze_ltx_pilot_job,
+        load_frozen_ltx_pilot_plan,
+    )
+    db, registration, approval, store, _ = state
+    row = db.fetchone("SELECT * FROM creative_packages WHERE creative_package_id=?", (PACKAGE,))
+    manifest = json.loads(row["manifest_json"])
+    store.resolve_managed_relative(row["package_relpath"]).unlink()
+    stages = manifest["stage_results"]
+    stages["creative_brief.v1"]["output_profile_id"] = "video.vertical.v1"
+    stages["script.v1"]["target_duration_seconds"] = 12
+    for beat in stages["script.v1"]["beats"]:
+        beat["duration_seconds"] = 4
+    for shot in stages["shot_plan.v1"]["shots"]:
+        shot["duration_seconds"] = 4
+        shot["render_intent"] = "IMAGE_TO_VIDEO"
+    location, digest = store.write_creative_package(PACKAGE, manifest)
+    db.execute("UPDATE creative_packages SET package_digest=?,package_relpath=?,manifest_json=? "
+               "WHERE creative_package_id=?", (digest, location, json.dumps(manifest), PACKAGE))
+    raw = payload(digest)
+    raw["selected_references"] = [
+        dict(candidate(shot), rights_scope=LTX_SCOPE, sha256=char*64,
+             input_relative_path=f"PicotooPet/references/{char*64}/{shot}.png")
+        for shot, char in zip(("shot-a", "shot-b", "shot-t"), "abc", strict=True)
+    ]
+    receipt = registration.register(ReferenceBatchRequestV1.model_validate(raw),
+                                    idempotency_key="ltx-three-shot-consent")
+    approval.decide_for_control_center(
+        approval_id=receipt.approval_id, decision="approve",
+        request_digest=receipt.approval_request_digest, idempotency_key="ltx-three-owner",
+        resolved_by="synthetic-fixture", reason="fixture only",
+    )
+    service = _v11_service(state)
+    requests = [LtxPilotFreezeRequestV12(creative_package_id=PACKAGE,
+                approved_reference_id=receipt.approval_id, idempotency_key="ltx-shot-" + shot,
+                selected_shot_id=shot) for shot in ("shot-a", "shot-b", "shot-t")]
+    jobs = [freeze_ltx_pilot_job(service, request) for request in requests]
+    plans = [load_frozen_ltx_pilot_plan(service, job.production_job_id) for job in jobs]
+    assert [plan.shot_id for plan in plans] == ["shot-a", "shot-b", "shot-t"]
+    assert [plan.reference_asset.sha256 for plan in plans] == [char*64 for char in "abc"]
+    assert len({plan.production_task_id for plan in plans}) == 3
+    assert all(job.status.value == "NeedsHuman" for job in jobs)
+    assert [freeze_ltx_pilot_job(service, request) for request in requests] == jobs
+    # 02. No accidental whole-batch legacy freeze or changed selection replay.
+    with pytest.raises(ValueError, match="LTX_PLAN_FIRST_SHOT_ONLY"):
+        freeze_ltx_pilot_job(service, requests[0].model_copy(update={"selected_shot_id": None}))
+    with pytest.raises(ValueError, match="LTX_PLAN_IDEMPOTENCY_CONFLICT"):
+        freeze_ltx_pilot_job(service, requests[0].model_copy(update={"selected_shot_id": "shot-b"}))
+    with pytest.raises(ValueError, match="LTX_PLAN_FULL_SHOT_CONSENT_REQUIRED"):
+        freeze_ltx_pilot_job(service, requests[0].model_copy(update={"selected_shot_id": "unrelated"}))
+    assert len(db.fetchall("SELECT * FROM production_jobs")) == 3
+    assert not db.fetchall("SELECT * FROM production_attempts")
+    assert not db.fetchall("SELECT * FROM production_tasks")
+    registration.revoke(receipt.approval_id, request_digest=receipt.approval_request_digest,
+                        reason="synthetic revoke")
+    with pytest.raises(ValueError, match="REFERENCE_ASSET_APPROVAL_NOT_VERIFIED"):
+        freeze_ltx_pilot_job(service, requests[1])
