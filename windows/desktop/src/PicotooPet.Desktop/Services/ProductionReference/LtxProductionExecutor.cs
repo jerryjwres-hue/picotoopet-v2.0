@@ -20,8 +20,15 @@ internal static class LtxProductionExecutor
         && Guid.TryParseExact(job.ProductionJobId, "D", out _)
         && job.PlanDigest is { Length: 64 };
 
+    // 01. This is technical candidate completion, never visual or film PASS.
+    internal static bool IsCandidateSettled(ProductionJobRecord job) =>
+        job.ProductionProfile == "production.ltx.desktop.local.v1"
+        && job.Status == "NeedsHuman" && job.FailureCode == "LTX_PILOT_REVIEW_REQUIRED"
+        && job.LeaseExecutorId is null && job.LeaseExpiresAt is null
+        && job.FinishedAt is not null && job.PlanDigest is { Length: 64 };
+
     internal static async Task RunAsync(ControlCenterSession session, ProductionJobRecord job,
-        ProductionSubmissionJournal journal, CancellationToken ct)
+        ProductionSubmissionJournal journal, CancellationToken ct, string? batchIdentity = null)
     {
         if (!IsSelected(job)) throw new ProductionWorkerException("LTX_PILOT_NOT_SELECTED");
         var digest = job.PlanDigest!;
@@ -30,8 +37,8 @@ internal static class LtxProductionExecutor
             throw new ProductionWorkerException("MEDIA_PENDING_RECONCILIATION");
         // 01. Preserve the existing exact operator permit, including armed
         //     HOLD semantics. No config file is created or changed by dispatch.
-        using var permit = P0ThreeShotAcceptanceGate.AcquireSubmissionPermit(job.ProductionJobId, digest)
-            ?? throw new ProductionWorkerException("P0_THREE_SHOT_ACCEPTANCE_HELD");
+        using var permit = P0ThreeShotAcceptanceGate.AcquireLtxSubmissionPermit(
+            job.ProductionJobId, digest, batchIdentity);
         var executor = ProductionExecutionService.NormalizeExecutorId("windows-production-" + Environment.MachineName);
         var pairing = WorkerLocalPairing.Require(executor);
         using var core = session.CreateWorkerChallengePreflightClient();
@@ -97,11 +104,12 @@ internal static class LtxProductionExecutor
         throw new ProductionWorkerException("LTX_GENERATION_WAIT_UNRESOLVED");
     }
 
-    internal static ProductionReferenceAssetV11Record ValidatePlan(ProductionJobRecord job, JsonElement plan)
+    internal static ProductionReferenceAssetV11Record ValidatePlan(ProductionJobRecord job, JsonElement plan,
+        bool allowSettled = false)
     {
         // 07. Verify the original JSON digest and complete renderer identity,
         //     not a locally reconstructed Wan or StoryPack plan.
-        if (!IsSelected(job) || plan.ValueKind != JsonValueKind.Object
+        if ((!IsSelected(job) && !(allowSettled && IsCandidateSettled(job))) || plan.ValueKind != JsonValueKind.Object
             || Convert.ToHexStringLower(SHA256.HashData(CanonicalJson.Serialize(JsonNode.Parse(plan.GetRawText())!))) != job.PlanDigest
             || plan.GetProperty("schema_version").GetString() != "1.2"
             || plan.GetProperty("production_profile").GetString() != job.ProductionProfile

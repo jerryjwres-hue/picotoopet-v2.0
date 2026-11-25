@@ -1,6 +1,9 @@
 using System.IO;
 using PicotooPet.Desktop.Core.Production;
 using PicotooPet.Desktop.Services;
+using PicotooPet.Desktop.Core.Contracts;
+using PicotooPet.Desktop.Services.ProductionReference;
+using System.Text.Json;
 
 namespace PicotooPet.MediaWorker.SmokeTests;
 
@@ -54,12 +57,62 @@ internal static class ThreeShotAcceptanceGateTests
                 RecoveryTests.Assert(resumed is not null, "explicit restored ALLOW may resume same job");
             File.WriteAllText(path, "{\"schema_version\":\"1.0\",\"mode\":\"hold\"}");
             AssertHeld(path, JobId, Digest);
+            VerifyLtxBatch(path);
             Console.WriteLine("P0_THREE_SHOT_GATE_FILE_HOLD_ALLOW_RESTART=PASS");
         }
         finally
         {
             if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
         }
+    }
+
+    private static void VerifyLtxBatch(string path)
+    {
+        // 01. Use real Windows file semantics, but entirely synthetic jobs.
+        var ids = new[] { JobId, "41dd22a4-b738-4931-9c62-55a2a4789690",
+            "10000000-0000-4000-8000-000000000003" };
+        var digests = new[] { Digest, new string('b', 64), new string('c', 64) };
+        var entries = ids.Zip(digests, (id, sha) => new { production_job_id = id, plan_digest = sha }).ToArray();
+        var identity = ProductionSubmissionJournal.Hash(string.Join("\n", ids.Zip(digests, (id, sha) => id + ":" + sha)));
+        File.WriteAllText(path, JsonSerializer.Serialize(new { schema_version = "1.1", mode = "allow_ltx_batch", jobs = entries }));
+        // 02. No legacy Wan permit can consume an LTX batch authorization.
+        AssertHeld(path, ids[0], digests[0]);
+        for (var i = 0; i < 3; i++)
+            using (var permit = P0ThreeShotAcceptanceGate.AcquireLtxSubmissionPermitAtPath(ids[i], digests[i], identity, path))
+                RecoveryTests.Assert(permit is not null, "exact batch member must acquire LTX permit");
+        void Reject(string id, string sha, string? batch)
+        {
+            try
+            {
+                using var permit = P0ThreeShotAcceptanceGate.AcquireLtxSubmissionPermitAtPath(id, sha, batch, path);
+                throw new InvalidOperationException("LTX batch unexpectedly allowed");
+            }
+            catch (ProductionWorkerException error) when (error.Code == "P0_THREE_SHOT_ACCEPTANCE_HELD") { }
+        }
+        Reject(ids[0], digests[0], null);
+        Reject(ids[0], digests[1], identity);
+        Reject(ids[0], digests[0], new string('f', 64));
+        File.WriteAllText(path, JsonSerializer.Serialize(new { schema_version = "1.1", mode = "allow_ltx_batch", jobs = entries.Reverse() }));
+        Reject(ids[0], digests[0], identity);
+        File.WriteAllText(path, JsonSerializer.Serialize(new { schema_version = "1.1", mode = "allow_ltx_batch", jobs = new[] { entries[0], entries[0], entries[2] } }));
+        Reject(ids[0], digests[0], identity);
+
+        // 03. The next-shot policy never skips an unresolved predecessor.
+        var now = DateTimeOffset.UtcNow;
+        var jobs = ids.Select((id, i) => new ProductionJobRecord(id, "creative", Digest, "project",
+            "production.ltx.desktop.local.v1", digests[i], "NeedsHuman", null, null,
+            "LTX_SIGNED_WORKER_NOT_ENABLED", null, "fixture-" + i, now, now, now)).ToArray();
+        RecoveryTests.Assert(P0ThreeShotAcceptanceGate.NextLtxBatchJob(jobs) == jobs[0], "shot one must run first");
+        var settled = jobs[0] with { FailureCode = "LTX_PILOT_REVIEW_REQUIRED" };
+        RecoveryTests.Assert(P0ThreeShotAcceptanceGate.NextLtxBatchJob([settled, jobs[1], jobs[2]]) == jobs[1],
+            "only technical candidate settlement may advance");
+        RecoveryTests.Assert(P0ThreeShotAcceptanceGate.NextLtxBatchJob([jobs[0] with { Status = "Rendering" }, jobs[1], jobs[2]]) is null,
+            "unresolved predecessor must hold batch");
+        RecoveryTests.Assert(P0ThreeShotAcceptanceGate.NextLtxBatchJob([jobs[0], jobs[1] with { FailureCode = "LTX_PILOT_REVIEW_REQUIRED" }, jobs[2]]) is null,
+            "out-of-order settlement must hold batch");
+        File.Delete(path);
+        Reject(ids[0], digests[0], identity);
+        Console.WriteLine("LTX_ORDERED_BATCH_GATE=PASS; GPU_POST=0");
     }
 
     private static string Allow(string jobId, string digest) =>

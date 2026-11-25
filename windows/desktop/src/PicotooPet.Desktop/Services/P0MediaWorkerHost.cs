@@ -131,17 +131,19 @@ public static class P0MediaWorkerHost
                         // 01. Explicit LTX pilot takes the same exclusive scheduling
                         //     slot as Wan. Never route a v1.2 job to the Wan parser.
                         var ltxJobs = await session.GetProductionJobsAsync(cancellationToken).ConfigureAwait(false);
-                        var ltxJob = ltxJobs.FirstOrDefault(job => LtxProductionExecutor.IsSelected(job)
-                            && P0ThreeShotAcceptanceGate.HasExplicitAllowFor(job.ProductionJobId));
-                        if (ltxJob is not null)
+                        var ltxSelection = await P0ThreeShotAcceptanceGate.SelectLtxAsync(
+                            session, ltxJobs, cancellationToken).ConfigureAwait(false);
+                        if (ltxSelection is not null)
                         {
+                            var ltxJob = ltxSelection.Job;
                             if (stopSignal.WaitOne(0)) break;
                             if (!backoff.TryGetValue(ltxJob.ProductionJobId, out var ltxAfter)
                                 || ltxAfter <= DateTimeOffset.UtcNow)
                             {
                                 try
                                 {
-                                    await LtxProductionExecutor.RunAsync(session, ltxJob, journal, cancellationToken)
+                                    await LtxProductionExecutor.RunAsync(session, ltxJob, journal, cancellationToken,
+                                        ltxSelection.BatchIdentity)
                                         .ConfigureAwait(false);
                                     backoff.Remove(ltxJob.ProductionJobId);
                                 }
