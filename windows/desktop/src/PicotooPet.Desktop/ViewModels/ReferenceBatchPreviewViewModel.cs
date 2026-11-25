@@ -268,7 +268,13 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
         get => _ltxReview;
         private set => SetProperty(ref _ltxReview, value);
     }
-    public async Task<LtxBatchReview> ReadLtxReviewAsync(CancellationToken ct = default)
+    public Task<LtxBatchReview> ReadLtxReviewAsync(CancellationToken ct = default)
+        => ReadLtxReviewCoreAsync(false, false, ct);
+
+    public Task<LtxBatchReview> ObserveLtxReviewAsync(bool localVlm, CancellationToken ct = default)
+        => ReadLtxReviewCoreAsync(true, localVlm, ct);
+
+    private async Task<LtxBatchReview> ReadLtxReviewCoreAsync(bool observe, bool localVlm, CancellationToken ct)
     {
         if (!CanReadLtxReview || _gateway is not ILtxCandidateReviewGateway review
             || Receipt is not { } receipt)
@@ -281,7 +287,9 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
             var request = _frozenRequest ?? throw new InvalidDataException("REFERENCE_REQUEST_REQUIRED");
             var fresh = await ReadBoundReceiptAsync(request, initial, ct);
             Receipt = fresh;
-            var result = await review.ReadLtxBatchReviewAsync(fresh, EligibleShots, ct);
+            var result = observe
+                ? await review.ObserveLtxBatchAsync(fresh, EligibleShots, localVlm, ct)
+                : await review.ReadLtxBatchReviewAsync(fresh, EligibleShots, ct);
             LtxReview = result;
             StatusText = result.Summary;
             return result;

@@ -220,6 +220,14 @@
      </DataTemplate>
     </ItemsControl.ItemTemplate>
    </ItemsControl>
+   <!-- 02. Reuse existing visual evidence: nine samples and optional private LAN model. -->
+   <WrapPanel Margin="0,4,0,8">
+    <Button Content="生成九宫格审片证据" Padding="12,7" Margin="0,0,8,0"
+            IsEnabled="{Binding CanReadLtxReview, FallbackValue=False}" Click="ObserveLtxCpu_Click"/>
+    <Button Content="本地 AI 辅助审片" Padding="12,7"
+            IsEnabled="{Binding CanReadLtxReview, FallbackValue=False}" Click="ObserveLtxVlm_Click"/>
+   </WrapPanel>
+   <TextBlock Text="{Binding LtxReview.Observation.Detail}" TextWrapping="Wrap"/>
    <Button Content="播放完整 LTX 候选影片（待审核）" HorizontalAlignment="Left" Padding="12,7"
            Margin="0,4,0,8" IsEnabled="{Binding LtxReview.CanPlayRoughCut, FallbackValue=False}"
            Click="PlayLtxRoughCut_Click"/>

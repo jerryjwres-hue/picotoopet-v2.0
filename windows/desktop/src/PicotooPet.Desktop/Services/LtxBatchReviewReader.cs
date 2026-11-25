@@ -2,6 +2,7 @@ using System.Text.Json;
 using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.Core.Production;
 using PicotooPet.Desktop.Services.ProductionReference;
+using PicotooPet.Desktop.Services.QualityObservation;
 
 namespace PicotooPet.Desktop.Services;
 
@@ -11,7 +12,8 @@ public sealed record LtxShotReview(string ShotId, string StatusText, string? Loc
     public bool CanPlay => LocalPath is not null;
 }
 
-public sealed record LtxBatchReview(IReadOnlyList<LtxShotReview> Shots, string? RoughCutPath, string Summary)
+public sealed record LtxBatchReview(IReadOnlyList<LtxShotReview> Shots, string? RoughCutPath, string Summary,
+    VisualObservationResult? Observation = null)
 {
     public bool CanPlayRoughCut => RoughCutPath is not null;
 }
@@ -20,6 +22,8 @@ public interface ILtxCandidateReviewGateway
 {
     Task<LtxBatchReview> ReadLtxBatchReviewAsync(ReferenceBatchReceipt receipt,
         IReadOnlyList<string> shotIds, CancellationToken cancellationToken);
+    Task<LtxBatchReview> ObserveLtxBatchAsync(ReferenceBatchReceipt receipt, IReadOnlyList<string> shotIds,
+        bool localVlm, CancellationToken cancellationToken);
     Task RerollLtxShotAsync(ReferenceBatchReceipt receipt, IReadOnlyList<string> shotIds,
         string shotId, string variant, CancellationToken cancellationToken);
 }
@@ -29,6 +33,14 @@ internal static class LtxBatchReviewReader
 {
     internal static async Task<LtxBatchReview> ReadAsync(ControlCenterSession session,
         ReferenceBatchReceipt receipt, IReadOnlyList<string> shotIds, CancellationToken ct)
+        => await ReadCoreAsync(session, receipt, shotIds, false, false, ct).ConfigureAwait(false);
+
+    internal static Task<LtxBatchReview> ObserveAsync(ControlCenterSession session,
+        ReferenceBatchReceipt receipt, IReadOnlyList<string> shotIds, bool localVlm, CancellationToken ct)
+        => ReadCoreAsync(session, receipt, shotIds, true, localVlm, ct);
+
+    private static async Task<LtxBatchReview> ReadCoreAsync(ControlCenterSession session,
+        ReferenceBatchReceipt receipt, IReadOnlyList<string> shotIds, bool observe, bool localVlm, CancellationToken ct)
     {
         if (receipt.RightsScope != ReferenceBatchValidation.LtxRightsScope
             || receipt.References.Length is not (1 or 3) || shotIds.Count != 3
@@ -46,6 +58,7 @@ internal static class LtxBatchReviewReader
         using var core = session.CreateWorkerChallengePreflightClient();
         var jobs = new List<ProductionJobRecord>();
         var shots = new List<LtxShotReview>();
+        var observationShots = new List<VisualObservationShot>();
         var probe = new FinalVideoQaMediaProbe(new FixedMasterVideoProcessRunner());
         foreach (var id in selected)
         {
@@ -112,6 +125,13 @@ internal static class LtxBatchReviewReader
                 throw new InvalidDataException("LTX_REVIEW_MEDIA_MISMATCH");
             jobs.Add(job);
             shots.Add(new(id, "技术核验通过，待视觉审核", path));
+            // 05. Preserve exact source identity from the persisted receipt.
+            //     The older observer has a 1000-character advisory action budget.
+            var action = plan.GetProperty("prompt").GetString() ?? "";
+            if (action.Length > 1000) action = "See frozen production plan; action exceeds observer text budget.";
+            observationShots.Add(new(index + 1, id, bound.ProductionTaskId, relative,
+                Text("output_sha256"), candidate.GetProperty("output_bytes").GetInt64(),
+                measured.FrameCount, measured.DurationMs, action));
         }
         // 03. Reuse the exact existing rough-cut manifest verifier. Reading
         //     never creates a missing rough cut, even when all shots are ready.
@@ -128,9 +148,21 @@ internal static class LtxBatchReviewReader
         if (active is not null && rough is not null && receipt.Status == "Approved"
             && receipt.ExpiresAt > DateTimeOffset.UtcNow)
             shots = shots.Select(shot => shot with { CanReroll = shot.CanPlay }).ToList();
-        return new(shots.AsReadOnly(), rough, rough is not null
+        VisualObservationResult? observation = null;
+        if (observe && rough is not null && observationShots.Count == 3)
+        {
+            // 06. Never invent a legacy PASS package. Evidence is bound to
+            //     the three current candidate IDs and exact plan digests.
+            observation = await LtxVisualObservation.ObserveAsync(jobs, observationShots,
+                localVlm, ct).ConfigureAwait(false);
+            var current = await CurrentBatchAsync(session, receipt, ct).ConfigureAwait(false);
+            if (active is not null && (current is null || !current.Select(job => job.ProductionJobId)
+                    .SequenceEqual(jobs.Select(job => job.ProductionJobId))))
+                observation = VisualReviewObservation.Unverified("审片期间批次改变；旧证据不能代表当前影片。");
+        }
+        return new(shots.AsReadOnly(), rough, observation is not null ? observation.Detail : rough is not null
             ? "三镜头候选影片已核验，可播放；正式交付与视觉审核尚未通过。"
-            : $"已核验 {jobs.Count}/{selected.Length} 个镜头；完整候选影片尚未就绪。");
+            : $"已核验 {jobs.Count}/{selected.Length} 个镜头；完整候选影片尚未就绪。", observation);
     }
 
     internal static async Task RerollAsync(ControlCenterSession session, ReferenceBatchReceipt receipt,

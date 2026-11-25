@@ -44,6 +44,41 @@ internal static class LtxRoughCutRealTests
                 throw new InvalidOperationException("LTX_REAL_ROUGH_CUT_ENCODE_FAILED");
             await probe.VerifyLtxRoughCutAsync(output, CancellationToken.None);
             Console.WriteLine("LTX_REAL_ROUGH_CUT_95_96_97_720P_288_FRAMES=PASS; GPU_POST=0");
+            // 03. Run the same observer on actual native portrait MP4 clips.
+            //     Synthetic media cannot establish identity/visual quality.
+            var shots = new List<PicotooPet.QualityObservation.InputShot>();
+            for (var index = 0; index < paths.Count; index++)
+            {
+                var path = paths[index];
+                var sha = await ProductionLocalEnvironment.Sha256FileAsync(path, CancellationToken.None);
+                var facts = await probe.VerifyLtxCandidateAsync(path, sha, new FileInfo(path).Length, CancellationToken.None);
+                shots.Add(new(index + 1, "shot-" + index, "task-" + index, Path.GetFileName(path),
+                    sha, new FileInfo(path).Length, facts.FrameCount, facts.DurationMs, "synthetic test"));
+            }
+            var input = Path.Combine(root, "input.json");
+            var manifest = new PicotooPet.QualityObservation.InputManifest(
+                "visual_review.ltx.input.v1", Guid.NewGuid().ToString("D"), shots);
+            await File.WriteAllTextAsync(input, System.Text.Json.JsonSerializer.Serialize(
+                manifest, PicotooPet.QualityObservation.ReviewPolicy.Json));
+            var evidence = root + "-evidence";
+            try
+            {
+                var report = await PicotooPet.QualityObservation.ReviewRunner.ExecuteAsync(
+                    new(input, root, evidence, "ffprobe.exe", "ffmpeg.exe", null, null, false));
+                if (report.Status != "ADVISORY_REVIEW" || report.ModelState != "NOT_REQUESTED"
+                    || report.Shots.Count != 3 || report.Shots.Any(shot => shot.Samples.Count != 3))
+                    throw new InvalidOperationException("LTX_REAL_OBSERVATION_FAILED");
+                var visual = await PicotooPet.Desktop.Services.QualityObservation.VisualReviewObservation.ReadReportAsync(
+                    new("visual_review.ltx.input.v1", manifest.JobId, shots.Select(shot =>
+                        new PicotooPet.Desktop.Services.QualityObservation.VisualObservationShot(
+                            shot.Order, shot.ShotId, shot.TaskId, shot.RelativePath, shot.Sha256, shot.Bytes,
+                            shot.ExpectedFrames, shot.ExpectedDurationMs, shot.Action)).ToArray()),
+                    evidence, false, CancellationToken.None);
+                if (visual.Verdict != PicotooPet.Desktop.Services.QualityObservation.VisualObservationVerdict.Review)
+                    throw new InvalidOperationException("LTX_REAL_OBSERVATION_REPORT_FAILED");
+                Console.WriteLine("LTX_REAL_VISUAL_OBSERVATION_9_FRAMES=PASS; MODEL=NOT_REQUESTED; VISUAL_ACCEPT=UNVERIFIED");
+            }
+            finally { if (Directory.Exists(evidence)) Directory.Delete(evidence, true); }
         }
         finally { Directory.Delete(root, true); }
     }

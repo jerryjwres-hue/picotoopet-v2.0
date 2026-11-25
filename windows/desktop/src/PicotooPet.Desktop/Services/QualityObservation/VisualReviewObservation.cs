@@ -186,7 +186,7 @@ public sealed class VisualReviewObservation : IVisualObservation
         pin.Recheck(); Require(Convert.ToHexStringLower(SHA256.HashData(bytes)) == sha, "EVIDENCE_CHANGED");
         return bytes;
     }
-    private static async Task<VisualObservationResult> ReadReportAsync(VisualObservationInput input, string output, bool transferred, CancellationToken ct)
+    internal static async Task<VisualObservationResult> ReadReportAsync(VisualObservationInput input, string output, bool transferred, CancellationToken ct)
     {
         var path = Path.Combine(output, "report.json"); using var pin = new VisualEvidenceFileLease(path);
         Require(new FileInfo(path).Length is > 0 and <= 1048576, "REPORT_INVALID");
@@ -240,7 +240,7 @@ public sealed class VisualReviewObservation : IVisualObservation
         var sheet = await ReadEvidenceAsync(output, "contact_sheet_3x3.png", Text(r, "contact_sheet_sha256"), new FileInfo(sheetPath).Length, 10000000, ct).ConfigureAwait(false);
         Require(sheet.Length >= 24 && sheet.AsSpan(0, 8).SequenceEqual(new byte[] { 137,80,78,71,13,10,26,10 })
             && System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(sheet.AsSpan(16,4)) == 976
-            && System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(sheet.AsSpan(20,4)) == 556, "GRID_INVALID");
+            && System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(sheet.AsSpan(20,4)) == (input.SchemaVersion == "visual_review.ltx.input.v1" ? 1720 : 556), "GRID_INVALID");
         var verdict = status == "REJECT_SUSPECT" && !uncertain ? VisualObservationVerdict.RejectSuspect : VisualObservationVerdict.Review;
         var detail = transferred ? "工具报告模型推理完成；持续加载状态与感知准确率仍未验证。" : "CPU 九宫格及时间戳证据已生成；未调用模型，等待人工审片。";
         return new(verdict, detail + " 不代表人工 ACCEPT / C011。请复核人物/服装、悬空支撑、商品形状、跨镜头场景和故事因果。\n"

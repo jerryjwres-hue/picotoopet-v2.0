@@ -376,6 +376,38 @@ public partial class ReferenceBatchPreviewPanel : UserControl
         catch (Exception) { OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, vm.StatusText); }
     }
 
+    private async void ObserveLtxCpu_Click(object sender, RoutedEventArgs e)
+        => await ObserveLtxAsync(false);
+
+    private async void ObserveLtxVlm_Click(object sender, RoutedEventArgs e)
+        => await ObserveLtxAsync(true);
+
+    private async Task ObserveLtxAsync(bool localVlm)
+    {
+        if (DataContext is not ReferenceBatchPreviewViewModel vm || !vm.CanReadLtxReview) return;
+        // 03. Explicit consent for the exact local model's three sampled
+        //     frames, never an implicit cloud upload or approval.
+        if (localVlm && System.Windows.MessageBox.Show(
+            "允许将三个镜头的中间帧发送到已配置的私有局域网 Ollama 模型进行辅助审阅？不代表正式通过。",
+            "确认本地 AI 审片", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        try
+        {
+            var result = await vm.ObserveLtxReviewAsync(localVlm);
+            OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, vm.StatusText);
+            if (result.Observation?.EvidenceDirectory is { } evidence)
+            {
+                var sheet = Path.Combine(evidence, "contact_sheet_3x3.png");
+                if (ProductionLocalEnvironment.IsOrdinaryFile(sheet))
+                {
+                    ProductionLocalEnvironment.AssertNoLinkEscape(Path.GetPathRoot(sheet)!, sheet);
+                    using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(sheet)
+                        { UseShellExecute = true });
+                }
+            }
+        }
+        catch (Exception) { OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, vm.StatusText); }
+    }
+
     private async void RerollLtxShot_Click(object sender, RoutedEventArgs e)
     {
         if (DataContext is not ReferenceBatchPreviewViewModel vm || !vm.CanReadLtxReview

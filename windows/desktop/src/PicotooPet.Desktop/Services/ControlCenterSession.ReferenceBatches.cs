@@ -50,6 +50,10 @@ public sealed partial class ControlCenterSession : IReviewedThreeShotPlanGateway
         IReadOnlyList<string> shotIds, CancellationToken cancellationToken)
         => LtxBatchReviewReader.ReadAsync(this, receipt, shotIds, cancellationToken);
 
+    public Task<LtxBatchReview> ObserveLtxBatchAsync(ReferenceBatchReceipt receipt,
+        IReadOnlyList<string> shotIds, bool localVlm, CancellationToken cancellationToken)
+        => LtxBatchReviewReader.ObserveAsync(this, receipt, shotIds, localVlm, cancellationToken);
+
     public Task RerollLtxShotAsync(ReferenceBatchReceipt receipt, IReadOnlyList<string> shotIds,
         string shotId, string variant, CancellationToken cancellationToken)
         => LtxBatchReviewReader.RerollAsync(this, receipt, shotIds, shotId, variant, cancellationToken);
