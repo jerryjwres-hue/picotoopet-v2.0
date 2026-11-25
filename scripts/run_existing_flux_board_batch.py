@@ -203,9 +203,21 @@ def execute(args: argparse.Namespace) -> Path:
             batch_dir = stage / "prepared"
             # 08. Regenerate from the exact frozen ZIP and existing builder.
             #     This is not a generic arbitrary-graph execution endpoint.
+            if args.reference_catalog is not None:
+                # 08a. Resolve an exact reusable scene/subject binding from
+                #      the frozen package; missing bindings stop before GPU.
+                bindings = bridge.resolve_reusable_bindings(
+                    _safe_path(args.package), args.package_sha256,
+                    _safe_path(args.reference_catalog), args.shot,
+                )
+                binding_file = stage / "resolved-reference-map.json"
+                _write_new(binding_file, json.dumps(bindings, ensure_ascii=False,
+                                                     sort_keys=True).encode("utf-8"))
+            else:
+                binding_file = _safe_path(args.reference_map)
             bridge.prepare_package_batch(
                 package_file=_safe_path(args.package), package_sha=args.package_sha256,
-                bindings_file=_safe_path(args.reference_map), runner_file=_safe_path(args.runner),
+                bindings_file=binding_file, runner_file=_safe_path(args.runner),
                 lora_file=lora, output_dir=batch_dir, variant=args.variant, selected_shot=args.shot,
             )
             batch = stage_inputs(batch_dir=batch_dir, runner=args.runner, stage=stage,
@@ -249,7 +261,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--package", type=Path, required=True)
     parser.add_argument("--package-sha256", required=True)
-    parser.add_argument("--reference-map", type=Path, required=True)
+    bindings = parser.add_mutually_exclusive_group(required=True)
+    bindings.add_argument("--reference-map", type=Path)
+    bindings.add_argument("--reference-catalog", type=Path)
     parser.add_argument("--runner", type=Path, required=True)
     parser.add_argument("--lora", type=Path, required=True)
     parser.add_argument("--run-dir", type=Path, required=True)

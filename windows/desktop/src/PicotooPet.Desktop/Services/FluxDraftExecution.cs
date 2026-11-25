@@ -46,7 +46,11 @@ internal static class FluxDraftExecution
         var maps = settings.GetProperty("reference_map_root").GetString() ?? "";
         if (!MasterVideoPathPolicy.IsSafeLocalFullyQualified(maps))
             throw new InvalidDataException("FLUX_DRAFT_CONFIG_INVALID");
+        // 01a. Explicit per-package override wins; otherwise reuse the
+        //      exact local subject/scene catalog. No directory or fuzzy search.
         var map = Path.Combine(maps, packageDigest + ".json");
+        var useCatalog = !File.Exists(map);
+        if (useCatalog) map = Path.Combine(maps, "reusable-bindings.json");
         var script = Path.Combine(AppContext.BaseDirectory, "flux-tools", "scripts", "run_existing_flux_board_batch.py");
         foreach (var file in new[] { runner, map, Python, Lora, script }) RequireFile(file);
 
@@ -95,7 +99,8 @@ internal static class FluxDraftExecution
             WorkingDirectory = Path.GetDirectoryName(script)!
         };
         foreach (var arg in new[] { "-B", "-E", "-s", script, "--package", zip,
-            "--package-sha256", packageDigest, "--reference-map", map, "--runner", runner,
+            "--package-sha256", packageDigest, useCatalog ? "--reference-catalog" : "--reference-map",
+            map, "--runner", runner,
             "--lora", Lora, "--run-dir", destination, "--variant",
             variant.ToString(System.Globalization.CultureInfo.InvariantCulture), "--execute" })
             start.ArgumentList.Add(arg);

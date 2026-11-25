@@ -327,3 +327,62 @@ class ExistingFluxBoardHandoffTests(unittest.TestCase):
         (output / "frame.png").write_bytes(png(720, 1280))
         with self.assertRaisesRegex(ValueError, "FLUX_CANDIDATE_OUTPUT_MISMATCH"):
             collect_flux_batch(batch, {prompt_id: entry}, output)
+
+
+    def test_reusable_binding_is_exact_and_does_not_require_per_package_map(self):
+        # 01. Synthetic sealed Bible and Kit with explicit pet identity/scene.
+        #     Same catalog may be reused across different Creative ZIPs.
+        from test_prepare_local_keyframe_batch import fixture, PACKAGE_ID
+        from prepare_local_keyframe_batch import canonical_bytes
+        _, _, _, package = fixture()
+        stages = package["stage_results"]
+        stages["creative_brief.v1"]["output_profile_id"] = "video.vertical.v1"
+        subject = {"subject_id": "maotai", "kind": "PET", "species": "dog",
+                   "identity_phrase": "one synthetic malamute"}
+        scene = {"scene_id": "room", "environment_phrase": "wooden table",
+                 "lighting_phrase": "warm light", "palette": ["brown"]}
+        bible = {"schema_version": "video_bible.v1", "subject": subject,
+                 "product": None, "scenes": [scene],
+                 "shots": [{"shot_id": f"shot-{i}", "order": i, "scene_id": "room",
+                            "featured": ["SUBJECT"]} for i in range(1, 4)]}
+        kit = stages["keyframe_kit.v1"]
+        catalog = self.root / "reusable-bindings.json"
+        catalog.write_text(json.dumps({
+            "schema": "picotoo.flux-reusable-draft-bindings.v1", "subject": subject,
+            "character_master": self.value["references"][0],
+            "scenes": [{"scene": scene, "references": [self.value["references"][1]]}],
+        }), encoding="utf-8")
+
+        def archive(name):
+            # 02. Reseal fixture after an intentional story mutation.
+            bible["bible_digest"] = _sha(canonical_bytes(
+                {k: v for k, v in bible.items() if k != "bible_digest"}))
+            stages["video_bible.v1"] = bible
+            kit["bible_digest"] = bible["bible_digest"]
+            kit["kit_digest"] = _sha(canonical_bytes(
+                {**{k: v for k, v in kit.items() if k != "bible_digest"}, "kit_digest": None}))
+            path = self.root / name
+            with zipfile.ZipFile(path, "w") as z:
+                z.writestr(f"{PACKAGE_ID}/creative-package.json", canonical_bytes(package))
+            return path, _sha(path.read_bytes())
+
+        first, digest = archive("first.zip")
+        mapping = module.resolve_reusable_bindings(first, digest, catalog)
+        self.assertEqual(list(mapping["shots"]), ["shot-1", "shot-2", "shot-3"])
+        self.assertEqual(mapping["shots"]["shot-2"], self.value["references"])
+        kit["keyframes"][1]["still_prompt"] = "A new frozen opening state"
+        second, changed = archive("second.zip")
+        self.assertNotEqual(changed, digest)
+        reroll = module.resolve_reusable_bindings(second, changed, catalog, "shot-2")
+        self.assertEqual(reroll["shots"], {"shot-2": self.value["references"]})
+        self.assertEqual(reroll["creative_package_sha256"], changed)
+        # 03. Same scene ID is not proof of unchanged scene or lighting.
+        bible["scenes"] = [{**scene, "lighting_phrase": "blue light"}]
+        wrong, wrong_sha = archive("changed-scene.zip")
+        with self.assertRaisesRegex(ValueError, "REUSABLE_SCENE_BINDING_MISSING_OR_AMBIGUOUS"):
+            module.resolve_reusable_bindings(wrong, wrong_sha, catalog)
+        bible["scenes"] = [scene]
+        bible["subject"] = {**subject, "subject_id": "other"}
+        wrong, wrong_sha = archive("changed-subject.zip")
+        with self.assertRaisesRegex(ValueError, "REUSABLE_SUBJECT_OR_PRODUCT_MISMATCH"):
+            module.resolve_reusable_bindings(wrong, wrong_sha, catalog)

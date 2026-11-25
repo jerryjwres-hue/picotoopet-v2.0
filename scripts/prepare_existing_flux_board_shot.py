@@ -285,6 +285,73 @@ def prepare(
     return manifest
 
 
+def resolve_reusable_bindings(package_file: Path, package_sha: str,
+                              catalog_file: Path, selected_shot: str | None = None) -> dict:
+    """Project explicitly bound local draft assets onto the frozen Bible."""
+    from prepare_local_keyframe_batch import read_package, keyframes
+
+    package = read_package(package_file, package_sha)
+    _, frames = keyframes(package, allow_vertical_guidance=True, allow_i2v_guidance=True)
+    bible = package["stage_results"]["video_bible.v1"]
+    catalog = _read_json(catalog_file)
+    # 01. This is a reusable local binding preference, not another asset
+    #     registry or an Owner approval. Require the entire exact subject.
+    if (set(catalog) != {"schema", "subject", "character_master", "scenes"}
+        or catalog["schema"] != "picotoo.flux-reusable-draft-bindings.v1"
+        or not isinstance(catalog["subject"], dict)
+        or catalog["subject"] != bible.get("subject")
+        or catalog["subject"].get("kind") != "PET"
+        or bible.get("product", False) is not None):
+        raise _bad("REUSABLE_SUBJECT_OR_PRODUCT_MISMATCH")
+    character = catalog["character_master"]
+    if (not isinstance(character, dict) or set(character) != {"role", "relative_path", "sha256"}
+        or character["role"] != "character_master"
+        or character["sha256"] != C8B_MASTER_SHA256):
+        raise _bad("REUSABLE_CHARACTER_MISMATCH")
+    # 02. Exact scene specification, including environment/light/palette;
+    #     a similar name or generic room ID never authorizes reuse.
+    scenes = catalog["scenes"]
+    bible_scenes = bible.get("scenes")
+    bible_shots = bible.get("shots")
+    if (not isinstance(scenes, list) or not 1 <= len(scenes) <= 32
+        or not isinstance(bible_scenes, list) or not isinstance(bible_shots, list)
+        or len(bible_shots) != len(frames)
+        or any(not isinstance(item, dict) or set(item) != {"scene", "references"}
+               or not isinstance(item["scene"], dict) for item in scenes)
+        or any(not isinstance(item, dict) for item in bible_scenes + bible_shots)):
+        raise _bad("REUSABLE_SCENE_SCHEMA_INVALID")
+    by_scene = {item.get("scene_id"): item for item in bible_scenes}
+    by_shot = {item.get("shot_id"): item for item in bible_shots}
+    if len(by_scene) != len(bible_scenes) or len(by_shot) != len(bible_shots):
+        raise _bad("REUSABLE_BIBLE_IDENTITY_INVALID")
+    wanted = [frame for frame in frames if selected_shot is None or frame["shot_id"] == selected_shot]
+    if not wanted:
+        raise _bad("CORE_SHOT_REFERENCES_MISSING")
+    mapped = {}
+    for frame in wanted:
+        shot = by_shot.get(frame["shot_id"])
+        if (shot is None or shot.get("order") != frame["order"]
+            or "SUBJECT" not in shot.get("featured", [])):
+            raise _bad("REUSABLE_SHOT_SCOPE_MISMATCH")
+        scene = by_scene.get(shot.get("scene_id"))
+        matches = [item for item in scenes if item["scene"] == scene]
+        if scene is None or len(matches) != 1:
+            raise _bad("REUSABLE_SCENE_BINDING_MISSING_OR_AMBIGUOUS")
+        refs = matches[0]["references"]
+        # 03. Only a scene master is reusable automatically. Per-shot props
+        #     and layout images require the original explicit package map.
+        if (not isinstance(refs, list) or len(refs) != 1
+            or not isinstance(refs[0], dict)
+            or set(refs[0]) != {"role", "relative_path", "sha256"}
+            or refs[0]["role"] != "scene_master"):
+            raise _bad("REUSABLE_SCENE_REFERENCE_INVALID")
+        mapped[frame["shot_id"]] = [dict(character), dict(refs[0])]
+    # The existing prepare() verifies actual file hashes, roles, and LoRA
+    # before any graph is built. No source rights or visual PASS is inferred.
+    return {"schema": "picotoo.flux-board-reference-map.v1",
+            "creative_package_sha256": package_sha, "shots": mapped}
+
+
 def prepare_package_batch(*, package_file: Path, package_sha: str,
                           bindings_file: Path, runner_file: Path, lora_file: Path,
                           output_dir: Path, variant: int, selected_shot: str | None = None) -> dict:
