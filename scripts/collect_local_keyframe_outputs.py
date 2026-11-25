@@ -305,6 +305,178 @@ def collect(batch: dict, batch_dir: Path, identities: dict,
     }
 
 
+def collect_flux_batch(batch_dir: Path, listing: dict | None, output_root: Path) -> dict:
+    """Collect the existing FLUX runner's exact graph outputs for all or one shot.
+
+    Reuse the established Comfy history and PNG reader; no new review schema,
+    inference, GPU POST, asset registration or silent source approval.
+    """
+    # 01. Read the actual batch, individual handoff and graph bytes.
+    from prepare_existing_flux_board_shot import RUNNER_SHA256, LORA_V2_SHA256
+
+    root = batch_dir.absolute()
+    def read_file(relative: Path) -> bytes:
+        current = root
+        if not current.is_dir() or current.is_symlink():
+            raise ValueError("FLUX_CANDIDATE_PATH_INVALID")
+        for part in relative.parts:
+            current = current / part
+            if current.is_symlink():
+                raise ValueError("FLUX_CANDIDATE_PATH_INVALID")
+        if not current.is_file():
+            raise ValueError("FLUX_CANDIDATE_PATH_INVALID")
+        return read_bounded(current)
+
+    raw = read_file(Path("batch_manifest.json"))
+    batch = parse_history(raw)
+    shots = batch.get("shots")
+    selected = batch.get("selected_shot")
+    variant = batch.get("variant")
+    if (batch.get("schema") != "picotoo.existing-flux-board-batch.v1"
+        or batch.get("production_authorized") is not False
+        or batch.get("owner_approved") is not False or batch.get("gpu_post") != 0
+        or type(variant) is not int or not 0 <= variant <= 10000
+        or not isinstance(shots, list) or len(shots) != (3 if selected is None else 1)
+        or (listing is not None and (not isinstance(listing, dict) or len(listing) > MAX_HISTORY_ITEMS))):
+        raise ValueError("FLUX_CANDIDATE_BATCH_INVALID")
+    package_sha = require_digest(batch["creative_package_sha256"])
+    kit = require_digest(batch["keyframe_kit_digest"])
+    prompt_identity(batch["creative_package_id"])
+    expected = {}
+    seen_shots = set()
+    for index, shot in enumerate(shots, 1):
+        shot_id, order = shot["shot_id"], shot["order"]
+        if (not isinstance(shot_id, str) or not ID.fullmatch(shot_id)
+            or shot_id in seen_shots or type(order) is not int or not 1 <= order <= 3
+            or (selected is None and order != index) or (selected is not None and selected != shot_id)
+            or shot["relative_directory"] != f"shot-{order:02d}"):
+            raise ValueError("FLUX_CANDIDATE_SHOT_SCOPE_INVALID")
+        seen_shots.add(shot_id)
+        directory = Path(shot["relative_directory"])
+        graph_raw = read_file(directory / "flux_board_candidate_api_graph.json")
+        handoff_raw = read_file(directory / "flux_board_handoff_manifest.json")
+        graph = parse_history(graph_raw)
+        handoff = parse_history(handoff_raw)
+        digest = file_sha(canonical_bytes(graph))
+        if (file_sha(graph_raw) != require_digest(shot["api_graph_sha256"])
+            or file_sha(handoff_raw) != require_digest(shot["handoff_manifest_sha256"])
+            or digest != require_digest(shot["graph_canonical_sha256"])
+            or digest in expected
+            or handoff.get("schema") != "picotoo.existing-flux-board-handoff.v1"
+            or handoff.get("runner_source_sha256") != RUNNER_SHA256
+            or handoff.get("lora_v2_sha256") != LORA_V2_SHA256
+            or handoff.get("creative_package_sha256") != package_sha
+            or handoff.get("keyframe_kit_digest") != kit
+            or handoff.get("shot_id") != shot_id or handoff.get("order") != order
+            or handoff.get("variant") != variant or handoff.get("seed") != shot["seed"]
+            or handoff.get("api_graph_sha256") != shot["api_graph_sha256"]
+            or handoff.get("graph_canonical_sha256") != digest
+            or handoff.get("source_output_profile") != "video.vertical.v1"
+            or handoff.get("draft_still_profile") != "flux2.still.864x1536.v1"
+            or handoff.get("production_authorized") is not False
+            or handoff.get("owner_approved") is not False or handoff.get("gpu_post") != 0):
+            raise ValueError("FLUX_CANDIDATE_HANDOFF_MISMATCH")
+        expected[digest] = shot
+
+    # 02. The actual runner stops its private Comfy server in finally.
+    #     Without saved history, use its exact copied PNG's embedded graph.
+    #     This never fabricates a prompt ID or a successful history record.
+    if listing is None:
+        from comfy_png_embedded_evidence import recover_embedded_png
+
+        rows, seen_hashes = [], set()
+        suffix = "all" if selected is None else f"s{shots[0]['order']:02d}"
+        expected_dir = f"keyframes_p0_{package_sha[:16]}_v{variant:05d}_{suffix}"
+        if batch.get("runner_output_directory") != expected_dir:
+            raise ValueError("FLUX_RUNNER_OUTPUT_DIRECTORY_MISMATCH")
+        jobs_raw = read_file(Path("flux_board_jobs.json"))
+        jobs = parse_history(jobs_raw)
+        if (file_sha(jobs_raw) != require_digest(batch["runner_jobs_sha256"])
+            or jobs.get("out") != expected_dir
+            or not isinstance(jobs.get("jobs"), list) or len(jobs["jobs"]) != len(shots)):
+            raise ValueError("FLUX_RUNNER_JOB_FILE_MISMATCH")
+        for (digest, shot), job in zip(expected.items(), jobs["jobs"], strict=True):
+            job_id = f"P0_{package_sha[:16]}_S{shot['order']:02d}_v{variant:05d}"
+            filename = job_id + "_v1.png"
+            if (job.get("id") != job_id or job.get("seeds") != [shot["seed"]]
+                or shot.get("runner_output_filename") != filename):
+                raise ValueError("FLUX_RUNNER_JOB_IDENTITY_MISMATCH")
+            path, data, (width, height) = verified_output(output_root, "", filename)
+            graph_bytes, proof = recover_embedded_png(data, filename)
+            sha = file_sha(data)
+            if ((width, height) != (864, 1536) or file_sha(graph_bytes) != digest
+                or proof["source_image_sha256"] != sha or sha in seen_hashes):
+                raise ValueError("FLUX_CANDIDATE_EMBEDDED_GRAPH_MISMATCH")
+            seen_hashes.add(sha)
+            rows.append({"shot_id": shot["shot_id"], "order": shot["order"], "prompt_id": None,
+                         "prepared_graph_sha256": digest, "selected_reference": None,
+                         "candidates": [{"output_relative_path": path, "sha256": sha, "bytes": len(data),
+                             "width": width, "height": height, "comfy_output_node": None, "format": "png",
+                             "image_container_crc_verified": True, "embedded_prompt_graph_verified": True,
+                             "pixels_decoded": False, "visual_review": "UNREVIEWED"}]})
+        return {
+            "schema": "picotoo.local-keyframe-output-candidates.v1",
+            "renderer": "flux2.still.864x1536.v1", "source_output_profile": "video.vertical.v1",
+            "creative_package_id": batch["creative_package_id"], "creative_package_sha256": package_sha,
+            "keyframe_kit_digest": kit, "batch_manifest_sha256": file_sha(raw),
+            "variant": variant, "selected_shot": selected, "shots": rows,
+            "history_provenance": "PNG_EMBEDDED_NO_HISTORY", "comfy_history_success_verified": False,
+            "recorded_image_bytes_observed": True, "candidate_files_staged": False,
+            "review_status": "NEEDS_HUMAN_REVIEW", "source_rights_confirmed": False,
+            "reference_approved": False, "gpu_post": 0,
+        }
+    # 03. Alternatively, discover only exact recorded successful graph identities.
+    matches = {digest: [] for digest in expected}
+    for prompt_id, entry in listing.items():
+        if not isinstance(entry, dict):
+            continue
+        prompt = entry.get("prompt")
+        if not isinstance(prompt, list) or len(prompt) < 3 or not isinstance(prompt[2], dict):
+            continue
+        digest = file_sha(canonical_bytes(prompt[2]))
+        if digest not in expected:
+            continue
+        try:
+            images = candidate_history({prompt_id: entry}, prompt_id, digest)
+        except (ValueError, TypeError, AttributeError, KeyError):
+            continue
+        matches[digest].append((prompt_id, images))
+    if any(len(items) != 1 for items in matches.values()):
+        raise ValueError("FLUX_CANDIDATE_HISTORY_MISSING_OR_AMBIGUOUS")
+
+    # 03. Reuse the existing pinned PNG reader and review manifest fields.
+    rows, paths, hashes = [], set(), set()
+    for digest, shot in expected.items():
+        prompt_id, images = matches[digest][0]
+        candidates = []
+        for image in images:
+            path, data, (width, height) = verified_output(output_root, image["subfolder"], image["filename"])
+            image_sha = file_sha(data)
+            if ((width, height) != (864, 1536) or image["node_id"] != "27"
+                or path.casefold() in paths or image_sha in hashes):
+                raise ValueError("FLUX_CANDIDATE_OUTPUT_MISMATCH")
+            paths.add(path.casefold())
+            hashes.add(image_sha)
+            candidates.append({
+                "output_relative_path": path, "sha256": image_sha, "bytes": len(data),
+                "width": width, "height": height, "comfy_output_node": image["node_id"],
+                "format": "png", "image_container_crc_verified": True,
+                "pixels_decoded": False, "visual_review": "UNREVIEWED",
+            })
+        rows.append({"shot_id": shot["shot_id"], "order": shot["order"], "prompt_id": prompt_id,
+                     "prepared_graph_sha256": digest, "candidates": candidates, "selected_reference": None})
+    return {
+        "schema": "picotoo.local-keyframe-output-candidates.v1",
+        "renderer": "flux2.still.864x1536.v1", "source_output_profile": "video.vertical.v1",
+        "creative_package_id": batch["creative_package_id"],
+        "creative_package_sha256": package_sha, "keyframe_kit_digest": kit,
+        "batch_manifest_sha256": file_sha(raw), "variant": variant, "selected_shot": selected,
+        "shots": rows, "recorded_image_bytes_observed": True, "candidate_files_staged": False,
+        "review_status": "NEEDS_HUMAN_REVIEW", "source_rights_confirmed": False,
+        "reference_approved": False, "gpu_post": 0,
+    }
+
+
 def collect_variant_snapshot(
     variants_root: Path, listing: dict, output_root: Path,
 ) -> tuple[list[tuple[str, dict]], dict]:
@@ -455,6 +627,7 @@ def main(argv: list[str] | None = None) -> int:
     batch_source = parser.add_mutually_exclusive_group(required=True)
     batch_source.add_argument("--batch-dir", type=Path)
     batch_source.add_argument("--variants-root", type=Path)
+    batch_source.add_argument("--flux-batch-dir", type=Path)
     parser.add_argument("--prompt-ids", type=Path)
     history_source = parser.add_mutually_exclusive_group(required=True)
     history_source.add_argument("--history-dir", type=Path)
@@ -462,12 +635,20 @@ def main(argv: list[str] | None = None) -> int:
     history_source.add_argument("--history-snapshot", type=Path)
     history_source.add_argument("--live-history-scan", action="store_true")
     history_source.add_argument("--embedded-png-map", type=Path)
+    history_source.add_argument("--flux-runner-outputs", action="store_true")
     parser.add_argument("--comfy-output-root", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args(argv)
     auto_discovery = args.history_snapshot is not None or args.live_history_scan
-    embedded_mode = args.embedded_png_map is not None
+    embedded_mode = args.embedded_png_map is not None or args.flux_runner_outputs
     variant_mode = args.variants_root is not None
+    flux_mode = args.flux_batch_dir is not None
+    # 04. The verified private FLUX runner uses port 8190. Read its exported
+    #     history snapshot instead of guessing the legacy 8188 server identity.
+    if flux_mode and ((args.history_snapshot is None and not args.flux_runner_outputs) or args.prompt_ids is not None):
+        parser.error("FLUX collection requires --history-snapshot or --flux-runner-outputs.")
+    if args.flux_runner_outputs and not flux_mode:
+        parser.error("--flux-runner-outputs requires --flux-batch-dir.")
     # 08. Multi-seed mode supports the SAME fixed loopback read-only GET
     #     as single-seed mode, or a provided offline history snapshot.
     #     Explicit per-shot IDs, PNG maps and write operations stay excluded.
@@ -485,6 +666,14 @@ def main(argv: list[str] | None = None) -> int:
     elif args.prompt_ids is None:
         parser.error("Explicit Comfy history requires --prompt-ids.")
     try:
+        if flux_mode:
+            listing = None if args.flux_runner_outputs else parse_history(read_bounded(args.history_snapshot))
+            result = collect_flux_batch(args.flux_batch_dir, listing, args.comfy_output_root)
+            args.output_dir.mkdir(parents=False, exist_ok=False)
+            with (args.output_dir / "candidate_manifest.json").open("xb") as output:
+                output.write(canonical_bytes(result))
+            print("FLUX_KEYFRAME_CANDIDATES=OBSERVED; HUMAN_REVIEW=REQUIRED; GPU_POST=0")
+            return 0
         if variant_mode:
             # 09. Fetch exactly one bounded history view over the existing
             #     fixed localhost GET, or read a user-supplied offline copy.

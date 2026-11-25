@@ -134,6 +134,55 @@ internal sealed class ProtectedWorkerSigningKey
             Match(reference, "snapshot_relative_path", m.SnapshotRelativePath); Match(reference, "graph_digest", m.GraphDigest);
             if (reference.GetProperty("source_bytes").GetInt64() != m.SourceBytes || reference.GetProperty("snapshot_bytes").GetInt64() != m.SnapshotBytes) throw InvalidScope();
         }
+        return await SignPinnedAsync(witness, payload, executable, journal, gpu, ct).ConfigureAwait(false);
+    }
+
+    // 01. Same measured protected key, same nonce ledger and GPU mutex.
+    //     An LTX snapshot is not a Wan plan; never project one into the other.
+    internal async Task<string> SignLtxMeasuredUnderLockAsync(JsonElement witness,
+        ProductionReferenceAssetV11Record reference, string planDigest, string vendorIntentDigest,
+        DurableReferenceSnapshot snapshot, ProductionSubmissionJournal journal,
+        ProductionSubmissionJournal.GpuLease gpu, DateTimeOffset now, CancellationToken ct)
+    {
+        gpu.RequireOwnedBy(journal);
+        ct.ThrowIfCancellationRequested();
+        var payload = WorkerWitnessEncoding.LtxPayload(witness);
+        WorkerWitnessEncoding.RequireFresh(witness, now);
+        using var witnessPins = new SnapshotPins([snapshot]);
+        if (journal.Pending().Count != 0 || journal.Read(reference.ProductionJobId, reference.ProductionTaskId) is not null)
+            throw new ProductionWorkerException("MEDIA_PENDING_RECONCILIATION");
+        if (reference.SchemaVersion != "reference_asset.v1" || reference.RightsScope != "ltx.desktop.local.i2v.production.v1"
+            || witness.GetProperty("journal_generation").GetInt64() != 0) throw InvalidScope();
+        Match(witness, "executor_id", _executor); Match(witness, "worker_key_id", Identity.KeyId);
+        Match(witness, "production_job_id", reference.ProductionJobId); Match(witness, "plan_digest", planDigest);
+        Match(witness, "journal_digest", Hash("[]"u8.ToArray()));
+        using var executable = await CoreWorkerChallengeClient.MeasureProcessImageAsync(ct).ConfigureAwait(false);
+        Match(witness, "worker_executable_sha256", executable.Sha256);
+        await snapshot.RecheckForWitnessAsync(ct).ConfigureAwait(false);
+        var m = snapshot.Measurement;
+        if (m.JobId != reference.ProductionJobId || m.TaskId != reference.ProductionTaskId
+            || m.ShotId != reference.ShotId || m.AssetId != reference.AssetId || m.ApprovalId != reference.ApprovalId
+            || m.PlanDigest != planDigest || m.GraphDigest != vendorIntentDigest
+            || m.SourceSha256 != reference.Sha256 || m.SourceBytes != reference.Bytes
+            || m.SnapshotSha256 != m.SourceSha256 || m.SnapshotBytes != m.SourceBytes) throw InvalidScope();
+        var observed = witness.GetProperty("references")[0];
+        Match(observed, "production_task_id", m.TaskId); Match(observed, "shot_id", m.ShotId);
+        Match(observed, "asset_id", m.AssetId); Match(observed, "approval_id", m.ApprovalId);
+        Match(observed, "approval_request_digest", reference.ApprovalRequestDigest);
+        Match(observed, "source_relative_path", reference.InputRelativePath);
+        Match(observed, "source_sha256", m.SourceSha256); Match(observed, "snapshot_sha256", m.SnapshotSha256);
+        Match(observed, "snapshot_receipt_sha256", m.ReceiptSha256);
+        Match(observed, "snapshot_relative_path", m.SnapshotRelativePath); Match(observed, "graph_digest", m.GraphDigest);
+        if (observed.GetProperty("source_bytes").GetInt64() != m.SourceBytes
+            || observed.GetProperty("snapshot_bytes").GetInt64() != m.SnapshotBytes) throw InvalidScope();
+        return await SignPinnedAsync(witness, payload, executable, journal, gpu, ct).ConfigureAwait(false);
+    }
+
+    // 02. Keep the sensitive DPAPI and nonce operation in one implementation.
+    private async Task<string> SignPinnedAsync(JsonElement witness, byte[] payload,
+        CoreWorkerChallengeClient.ProcessImageMeasurement executable, ProductionSubmissionJournal journal,
+        ProductionSubmissionJournal.GpuLease gpu, CancellationToken ct)
+    {
         ct.ThrowIfCancellationRequested();
         // Use actual current UTC again after potentially slow disk/approval work.
         await executable.RequireCurrentAsync(ct).ConfigureAwait(false);

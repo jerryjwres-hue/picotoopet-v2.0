@@ -28,3 +28,7 @@ Console.WriteLine("QA_MEDIA_POLICY=PASS");
 PicotooPet.FinalVideoQa.SmokeTests.PolicyTests.Run();
 await PicotooPet.FinalVideoQa.SmokeTests.SecurityTests.RunAsync();
 await PicotooPet.FinalVideoQa.SmokeTests.LifecycleTests.RunAsync(args.Contains("--real", StringComparer.Ordinal));
+
+// 01. Exercise the exact new rough-cut FFmpeg command, not the older C004 fixture.
+if (args.Contains("--real", StringComparer.Ordinal))
+    await PicotooPet.FinalVideoQa.SmokeTests.LtxRoughCutRealTests.RunAsync();

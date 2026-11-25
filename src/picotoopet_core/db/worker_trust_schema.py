@@ -43,6 +43,14 @@ CREATE INDEX IF NOT EXISTS idx_worker_challenges_key_job
 def upgrade_worker_trust_columns(connection) -> None:
     """Upgrade already-existing trust tables without granting existing keys B."""
     for table, additions in {
+        # 01. LTX receipts are facts of the existing signed attempt, not Comfy IDs.
+        "production_attempts": {
+            "ltx_generation_id": "TEXT",
+            "ltx_start_frame_asset_id": "TEXT",
+            "ltx_video_asset_id": "TEXT",
+            "ltx_duration_ms": "INTEGER",
+            "ltx_result_digest": "TEXT",
+        },
         "production_worker_keys": {"trust_model": "TEXT NOT NULL DEFAULT 'STRICT_UNVERIFIED'"},
         "production_worker_challenges": {
             "admitted_lease_token_digest": "TEXT",
@@ -58,4 +66,9 @@ def upgrade_worker_trust_columns(connection) -> None:
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_worker_challenge_admitted_lease "
         "ON production_worker_challenges(admitted_lease_token_digest) "
         "WHERE admitted_lease_token_digest IS NOT NULL"
+    )
+
+    connection.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_production_attempt_ltx_generation "
+        "ON production_attempts(ltx_generation_id) WHERE ltx_generation_id IS NOT NULL"
     )

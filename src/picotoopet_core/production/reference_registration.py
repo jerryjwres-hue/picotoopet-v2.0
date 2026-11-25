@@ -24,7 +24,9 @@ from picotoopet_core.creative.store import CreativeArtifactStore
 from picotoopet_core.handoffs.approvals import HandoffApprovalService
 
 _TYPE = "production.reference_asset.v1"
+# 01. Engine-specific reference consent. Never translate a Wan grant into LTX.
 _USE = "wan22.i2v.production.v1"
+_LTX_USE = "ltx.desktop.local.i2v.production.v1"
 
 
 def _digest(value: object) -> str:
@@ -41,7 +43,7 @@ class ReferenceCandidateV1(BaseModel):
     bytes: int = Field(gt=0, le=32 * 1024 * 1024)
     source_reference: Literal["USER_SUPPLIED", "LICENSED"]
     source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    rights_scope: Literal["wan22.i2v.production.v1"]
+    rights_scope: Literal["wan22.i2v.production.v1", "ltx.desktop.local.i2v.production.v1"]
 
     @model_validator(mode="after")
     def _managed_path(self) -> ReferenceCandidateV1:
@@ -80,6 +82,9 @@ class ReferenceBatchRequestV1(BaseModel):
     def _no_ambiguous_shot_or_path(self) -> ReferenceBatchRequestV1:
         shots = [x.shot_id for x in self.selected_references]
         paths = [x.input_relative_path.lower() for x in self.selected_references]
+        # 02. One explicit consent decision never mixes rendering engines.
+        if len({item.rights_scope for item in self.selected_references}) != 1:
+            raise ValueError("REFERENCE_BATCH_MIXED_RENDERER_SCOPE")
         if len(set(shots)) != len(shots) or len(set(paths)) != len(paths):
             raise ValueError("REFERENCE_BATCH_DUPLICATE_SHOT_OR_PATH")
         return self
@@ -108,6 +113,8 @@ class ReferenceBatchReceiptV1(BaseModel):
     creative_package_digest: str
     goal_id: str
     references: list[RegisteredReferenceV1]
+    # 04. New LTX receipts identify their scope; old Wan HTTP receipts omit it.
+    rights_scope: Literal["ltx.desktop.local.i2v.production.v1"] | None = None
 
 
 class ReferenceRegistrationService:
@@ -144,7 +151,8 @@ class ReferenceRegistrationService:
         if row is None or row["approval_type"] != _TYPE or row["task_id"] is not None:
             raise ApprovalError("REFERENCE_BATCH_NOT_FOUND")
         scope = json.loads(row["scope_json"])
-        if scope.get("schema_version") != "reference_consent_batch.v1":
+        if (scope.get("schema_version") != "reference_consent_batch.v1"
+            or scope.get("rights_scope") not in (_USE, _LTX_USE)):
             raise ApprovalError("REFERENCE_BATCH_NOT_FOUND")
         return ReferenceBatchReceiptV1(
             schema_version="reference_batch.v1",
@@ -155,6 +163,7 @@ class ReferenceRegistrationService:
             creative_package_digest=scope["creative_package_digest"],
             goal_id=scope["goal_id"],
             references=[RegisteredReferenceV1.model_validate(item) for item in scope["references"]],
+            rights_scope=_LTX_USE if scope["rights_scope"] == _LTX_USE else None,
         )
 
     def get(self, approval_id: str) -> ReferenceBatchReceiptV1:
@@ -279,7 +288,8 @@ class ReferenceRegistrationService:
                 "creative_job_id": package["creative_job_id"],
                 "creative_package_id": request.creative_package_id,
                 "creative_package_digest": request.creative_package_digest,
-                "rights_scope": _USE,
+                # 03. Store exact explicitly requested purpose in immutable approval.
+                "rights_scope": request.selected_references[0].rights_scope,
                 "explicit_rights_attestation": True,
                 "byte_provenance": "WINDOWS_CLIENT_CLAIM_NOT_CORE_HASHED",
                 "reference_count": len(references),

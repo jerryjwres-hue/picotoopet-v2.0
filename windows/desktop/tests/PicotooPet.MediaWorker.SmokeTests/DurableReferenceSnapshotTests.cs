@@ -336,7 +336,24 @@ internal static class DurableReferenceSnapshotTests
                     File.SetAttributes(path, File.GetAttributes(path) & ~FileAttributes.ReadOnly);
                 }
             }
-            Directory.Delete(Root, recursive: true);
+            // Test teardown only: a just-killed child or Windows scanner may
+            // still hold a file briefly after WaitForExit. Retry ONLY sharing
+            // or lock violations, never an ACL denial or failed safety assertion.
+            // A persistent handle leak still fails the native test.
+            for (var attempt = 0; ; attempt++)
+            {
+                try
+                {
+                    if (Directory.Exists(Root)) Directory.Delete(Root, recursive: true);
+                    break;
+                }
+                catch (IOException error) when (OperatingSystem.IsWindows()
+                    && (error.HResult & 0xffff) is 32 or 33 && attempt < 10)
+                {
+                    Console.WriteLine($"P0_Q2_TEARDOWN_SHARING_RETRY={attempt + 1}");
+                    Thread.Sleep(200);
+                }
+            }
         }
     }
 }

@@ -3,35 +3,35 @@
 from __future__ import annotations
 
 import hashlib
-import importlib.util
 import json
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "prepare_existing_flux_board_shot.py"
-SPEC = importlib.util.spec_from_file_location("_existing_flux_board_handoff", SCRIPT)
-assert SPEC and SPEC.loader
-module = importlib.util.module_from_spec(SPEC)
-sys.modules[SPEC.name] = module
-SPEC.loader.exec_module(module)
+sys.path.insert(0, str(SCRIPT.parent))
+# 01. Import the same module used by collect_flux_batch. Synthetic SHA
+#     patches must apply to both preparation and collection in this fixture.
+#     Production constants remain unchanged outside the test.
+import prepare_existing_flux_board_shot as module
 
 SYNTHETIC_BUILDER = '''# Synthetic only: matches the handoff API, never runs ComfyUI.
 def build(job, seed, ref_names):
     # 01. Distinct fake nodes intentionally exercise the exact requested
     #     prompt/seed/model/LoadImage/SaveImage values without GPU.
     g = {
-        "4": {"inputs": {"text": job["prompt"]}},
+        "4": {"class_type": "CLIPTextEncode", "inputs": {"text": job["prompt"]}},
         "6": {"class_type": "LoraLoaderModelOnly", "inputs": {
             "strength_model": job["lora"]["strength"]}},
-        "20": {"inputs": {"width": job["w"], "height": job["h"]}},
-        "23": {"inputs": {"noise_seed": seed}},
-        "27": {"inputs": {"filename_prefix": "PTV2_" + job["id"]}},
+        "20": {"class_type": "EmptyFlux2LatentImage", "inputs": {"width": job["w"], "height": job["h"]}},
+        "23": {"class_type": "RandomNoise", "inputs": {"noise_seed": seed}},
+        "27": {"class_type": "SaveImage", "inputs": {"filename_prefix": "PTV2_" + job["id"]}},
     }
     for i, name in enumerate(ref_names):
-        g[str(100+10*i)] = {"inputs": {"image": name}}
+        g[str(100+10*i)] = {"class_type": "LoadImage", "inputs": {"image": name}}
     return g
 '''
 
@@ -45,7 +45,9 @@ class ExistingFluxBoardHandoffTests(unittest.TestCase):
         # 02. Every CI file is synthetic and lives in a temporary folder.
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        # 02a. macOS TMPDIR may be beneath /var -> /private/var.
+        #      Normalize the fixture root, not the production reparse policy.
+        self.root = Path(self.temp.name).resolve()
         self.runner = self.root / "run_flux_board.py"
         self.runner.write_text(SYNTHETIC_BUILDER, encoding="utf-8")
         (self.root / "refs_real").mkdir()
@@ -202,3 +204,185 @@ class ExistingFluxBoardHandoffTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "DUPLICATE_JSON_KEY"):
             module.prepare(request_file=self.request, runner_file=self.runner,
                            lora_file=self.lora, output_dir=self.output)
+
+
+    def test_core_batch_and_single_shot_reroll_use_frozen_kit(self):
+        # 01. Real Core ZIP parser and existing frozen-kit checks, synthetic assets.
+        from test_prepare_local_keyframe_batch import fixture, PACKAGE_ID
+        from prepare_local_keyframe_batch import canonical_bytes
+        _, _, _, package = fixture()
+        package["stage_results"]["creative_brief.v1"]["output_profile_id"] = "video.vertical.v1"
+        archive = self.root / "package.zip"
+        with zipfile.ZipFile(archive, "w") as z:
+            z.writestr(f"{PACKAGE_ID}/creative-package.json", canonical_bytes(package))
+        digest = _sha(archive.read_bytes())
+        bindings = self.root / "bindings.json"
+        mapping = {"schema": "picotoo.flux-board-reference-map.v1", "creative_package_sha256": digest,
+                   "shots": {f"shot-{i}": self.value["references"] for i in range(1, 4)}}
+        bindings.write_text(json.dumps(mapping), encoding="utf-8")
+        def run(name, variant, shot=None):
+            return module.prepare_package_batch(package_file=archive, package_sha=digest,
+                bindings_file=bindings, runner_file=self.runner, lora_file=self.lora,
+                output_dir=self.root / name, variant=variant, selected_shot=shot)
+        batch = run("batch", 0)
+        self.assertEqual([x["shot_id"] for x in batch["shots"]], ["shot-1", "shot-2", "shot-3"])
+        self.assertEqual(len({x["seed"] for x in batch["shots"]}), 3)
+        self.assertFalse(batch["production_authorized"])
+        jobs = (self.root / "batch" / "flux_board_jobs.json").read_bytes()
+        self.assertEqual(_sha(jobs), batch["runner_jobs_sha256"])
+        self.assertEqual(len(json.loads(jobs)["jobs"]), 3)
+        # 01a. Execution staging reuses exact source bytes and prepared refs.
+        #      No GPU, legacy process, port or Windows lock is invoked in CI.
+        from run_existing_flux_board_batch import stage_inputs
+        stage = self.root / "execution"
+        stage.mkdir()
+        inputs = self.root / "comfy-input"
+        inputs.mkdir()
+        staged = stage_inputs(batch_dir=self.root / "batch", runner=self.runner,
+                              stage=stage, comfy_input=inputs)
+        self.assertEqual(staged, batch)
+        self.assertEqual((stage / "run_flux_board.py").read_bytes(), self.runner.read_bytes())
+        self.assertEqual((stage / "flux_board_jobs.json").read_bytes(), jobs)
+        self.assertEqual((stage / "refs_real" / self.character.name).read_bytes(), self.character.read_bytes())
+        # 02a. Reject differing pre-existing basename instead of overwriting it.
+        (inputs / ("PTV2_" + self.character.name)).write_bytes(b"unrelated")
+        denied = self.root / "execution-denied"
+        denied.mkdir()
+        with self.assertRaisesRegex(ValueError, "FLUX_DRAFT_COMFY_INPUT_COLLISION"):
+            stage_inputs(batch_dir=self.root / "batch", runner=self.runner,
+                         stage=denied, comfy_input=inputs)
+        self.assertFalse((denied / "run_flux_board.py").exists())
+        self.assertEqual((inputs / ("PTV2_" + self.character.name)).read_bytes(), b"unrelated")
+        self.assertEqual(json.loads(jobs)["out"], batch["runner_output_directory"])
+        for record in batch["shots"]:
+            folder = self.root / "batch" / record["relative_directory"]
+            raw = (folder / "flux_board_candidate_api_graph.json").read_bytes()
+            self.assertEqual(_sha(raw), record["api_graph_sha256"])
+            self.assertEqual(_sha(raw.rstrip(b"\n")), record["graph_canonical_sha256"])
+            self.assertEqual(json.loads(raw)["4"]["inputs"]["text"],
+                             f"mtai_dog, Opening state {record['order']}")
+        reroll = run("reroll", 1, "shot-2")
+        self.assertEqual(len(reroll["shots"]), 1)
+        self.assertNotEqual(reroll["shots"][0]["seed"], batch["shots"][1]["seed"])
+        before = (self.root / "batch" / "batch_manifest.json").read_bytes()
+        with self.assertRaisesRegex(ValueError, "OUTPUT_DIR_MUST_BE_NEW"):
+            run("batch", 1)
+        self.assertEqual((self.root / "batch" / "batch_manifest.json").read_bytes(), before)
+        del mapping["shots"]["shot-3"]
+        bindings.write_text(json.dumps(mapping), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "CORE_SHOT_REFERENCES_MISSING"):
+            run("missing", 0)
+        self.assertFalse((self.root / "missing").exists())
+
+
+    def test_flux_output_collection_reuses_real_history_and_png_checks(self):
+        # 01. Reuse the existing synthetic builder and Core Kit fixture.
+        from test_prepare_local_keyframe_batch import fixture, PACKAGE_ID
+        from test_collect_local_keyframe_outputs import png
+        from collect_local_keyframe_outputs import collect_flux_batch
+        from prepare_local_keyframe_batch import canonical_bytes
+        _, _, _, package = fixture()
+        package["stage_results"]["creative_brief.v1"]["output_profile_id"] = "video.vertical.v1"
+        archive = self.root / "source.zip"
+        with zipfile.ZipFile(archive, "w") as z:
+            z.writestr(f"{PACKAGE_ID}/creative-package.json", canonical_bytes(package))
+        digest = _sha(archive.read_bytes())
+        bindings = self.root / "map.json"
+        bindings.write_text(json.dumps({"schema": "picotoo.flux-board-reference-map.v1",
+            "creative_package_sha256": digest, "shots": {"shot-2": self.value["references"]}}))
+        batch = self.root / "reroll-2"
+        module.prepare_package_batch(package_file=archive, package_sha=digest, bindings_file=bindings,
+            runner_file=self.runner, lora_file=self.lora, output_dir=batch, variant=4, selected_shot="shot-2")
+        output = self.root / "comfy-out"
+        output.mkdir()
+        (output / "frame.png").write_bytes(png(864, 1536))
+        graph = json.loads((batch / "shot-02" / "flux_board_candidate_api_graph.json").read_bytes())
+        prompt_id = "00000000-0000-4000-8000-000000000002"
+        entry = {"status": {"status_str": "success", "completed": True},
+                 "prompt": [1, prompt_id, graph], "outputs": {"27": {"images": [
+                     {"type": "output", "subfolder": "", "filename": "frame.png"}]}}}
+        result = collect_flux_batch(batch, {prompt_id: entry}, output)
+        self.assertEqual(result["selected_shot"], "shot-2")
+        self.assertEqual(result["shots"][0]["order"], 2)
+        self.assertEqual(result["shots"][0]["candidates"][0]["sha256"], _sha((output / "frame.png").read_bytes()))
+        self.assertFalse(result["reference_approved"])
+        self.assertEqual(result["gpu_post"], 0)
+        # 02. The original runner shuts down Comfy; copied PNG retains exact
+        #     embedded API graph. No fabricated history or prompt ID.
+        import struct
+        import zlib
+        meta = b"prompt\x00" + canonical_bytes(graph)
+        chunk = struct.pack(">I", len(meta)) + b"tEXt" + meta + struct.pack(">I", zlib.crc32(b"tEXt" + meta) & 0xffffffff)
+        plain = png(864, 1536)
+        prepared = json.loads((batch / "batch_manifest.json").read_bytes())
+        copied = output / prepared["shots"][0]["runner_output_filename"]
+        copied.write_bytes(plain[:-12] + chunk + plain[-12:])
+        embedded = collect_flux_batch(batch, None, output)
+        self.assertEqual(embedded["history_provenance"], "PNG_EMBEDDED_NO_HISTORY")
+        self.assertFalse(embedded["comfy_history_success_verified"])
+        self.assertIsNone(embedded["shots"][0]["prompt_id"])
+        self.assertTrue(embedded["shots"][0]["candidates"][0]["embedded_prompt_graph_verified"])
+        with self.assertRaisesRegex(ValueError, "FLUX_CANDIDATE_HISTORY_MISSING_OR_AMBIGUOUS"):
+            collect_flux_batch(batch, {}, output)
+        (output / "frame.png").write_bytes(png(720, 1280))
+        with self.assertRaisesRegex(ValueError, "FLUX_CANDIDATE_OUTPUT_MISMATCH"):
+            collect_flux_batch(batch, {prompt_id: entry}, output)
+
+
+    def test_reusable_binding_is_exact_and_does_not_require_per_package_map(self):
+        # 01. Synthetic sealed Bible and Kit with explicit pet identity/scene.
+        #     Same catalog may be reused across different Creative ZIPs.
+        from test_prepare_local_keyframe_batch import fixture, PACKAGE_ID
+        from prepare_local_keyframe_batch import canonical_bytes
+        _, _, _, package = fixture()
+        stages = package["stage_results"]
+        stages["creative_brief.v1"]["output_profile_id"] = "video.vertical.v1"
+        subject = {"subject_id": "maotai", "kind": "PET", "species": "dog",
+                   "identity_phrase": "one synthetic malamute"}
+        scene = {"scene_id": "room", "environment_phrase": "wooden table",
+                 "lighting_phrase": "warm light", "palette": ["brown"]}
+        bible = {"schema_version": "video_bible.v1", "subject": subject,
+                 "product": None, "scenes": [scene],
+                 "shots": [{"shot_id": f"shot-{i}", "order": i, "scene_id": "room",
+                            "featured": ["SUBJECT"]} for i in range(1, 4)]}
+        kit = stages["keyframe_kit.v1"]
+        catalog = self.root / "reusable-bindings.json"
+        catalog.write_text(json.dumps({
+            "schema": "picotoo.flux-reusable-draft-bindings.v1", "subject": subject,
+            "character_master": self.value["references"][0],
+            "scenes": [{"scene": scene, "references": [self.value["references"][1]]}],
+        }), encoding="utf-8")
+
+        def archive(name):
+            # 02. Reseal fixture after an intentional story mutation.
+            bible["bible_digest"] = _sha(canonical_bytes(
+                {k: v for k, v in bible.items() if k != "bible_digest"}))
+            stages["video_bible.v1"] = bible
+            kit["bible_digest"] = bible["bible_digest"]
+            kit["kit_digest"] = _sha(canonical_bytes(
+                {**{k: v for k, v in kit.items() if k != "bible_digest"}, "kit_digest": None}))
+            path = self.root / name
+            with zipfile.ZipFile(path, "w") as z:
+                z.writestr(f"{PACKAGE_ID}/creative-package.json", canonical_bytes(package))
+            return path, _sha(path.read_bytes())
+
+        first, digest = archive("first.zip")
+        mapping = module.resolve_reusable_bindings(first, digest, catalog)
+        self.assertEqual(list(mapping["shots"]), ["shot-1", "shot-2", "shot-3"])
+        self.assertEqual(mapping["shots"]["shot-2"], self.value["references"])
+        kit["keyframes"][1]["still_prompt"] = "A new frozen opening state"
+        second, changed = archive("second.zip")
+        self.assertNotEqual(changed, digest)
+        reroll = module.resolve_reusable_bindings(second, changed, catalog, "shot-2")
+        self.assertEqual(reroll["shots"], {"shot-2": self.value["references"]})
+        self.assertEqual(reroll["creative_package_sha256"], changed)
+        # 03. Same scene ID is not proof of unchanged scene or lighting.
+        bible["scenes"] = [{**scene, "lighting_phrase": "blue light"}]
+        wrong, wrong_sha = archive("changed-scene.zip")
+        with self.assertRaisesRegex(ValueError, "REUSABLE_SCENE_BINDING_MISSING_OR_AMBIGUOUS"):
+            module.resolve_reusable_bindings(wrong, wrong_sha, catalog)
+        bible["scenes"] = [scene]
+        bible["subject"] = {**subject, "subject_id": "other"}
+        wrong, wrong_sha = archive("changed-subject.zip")
+        with self.assertRaisesRegex(ValueError, "REUSABLE_SUBJECT_OR_PRODUCT_MISMATCH"):
+            module.resolve_reusable_bindings(wrong, wrong_sha, catalog)

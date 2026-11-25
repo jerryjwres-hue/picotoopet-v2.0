@@ -14,6 +14,8 @@
     <!-- #162 controller exception: exact managed Ed25519 primitive; no runtime download. -->
     <PackageReference Include="BouncyCastle.Cryptography" Version="[2.7.0]" />
     <ProjectReference Include="..\PicotooPet.Desktop.Core\PicotooPet.Desktop.Core.csproj" />
+    <!-- Reuse the existing read-only observer assembly; no model or external FFmpeg redistribution. -->
+    <ProjectReference Include="..\..\..\..\tools\p0_visual_review\PicotooPet.VisualReview.csproj" />
     <!-- Preview-only managed CPU WebP codec: separate from zero-package Core and built-in system tray. -->
     <ProjectReference Include="..\PicotooPet.ReferencePreview.Codecs\PicotooPet.ReferencePreview.Codecs.csproj" />
     <Resource Include="Assets\Pet\Husky\V1\*.png" />
@@ -21,6 +23,14 @@
     <!-- Maotai v2 art : independent transparent raster parts are copied into the published payload unchanged. -->
     <Content Include="Assets\Maotai\V2\**\*.png">
       <Link>ui-assets\maotai\v2\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </Content>
+
+    <!-- 01. Ship the existing CPU preparation/collection and pinned-runner
+         entry point, not an additional model or executable download. -->
+    <Content Include="..\..\..\..\scripts\run_existing_flux_board_batch.py;..\..\..\..\scripts\prepare_existing_flux_board_shot.py;..\..\..\..\scripts\prepare_local_keyframe_batch.py;..\..\..\..\scripts\collect_local_keyframe_outputs.py;..\..\..\..\scripts\recover_comfy_keyframe_workflow.py;..\..\..\..\scripts\comfy_png_embedded_evidence.py;..\..\..\..\scripts\qwen_reference_bindings.py">
+      <Link>flux-tools\scripts\%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
     </Content>

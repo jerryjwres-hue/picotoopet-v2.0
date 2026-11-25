@@ -17,6 +17,8 @@ from picotoopet_core.production.profile import VIDEO_OUTPUT_PROFILES
 class ProductionProfile(StrEnum):
     # ── Closed profile identity ──────────────────────────────────────────────
     COMFYUI_V1 = "production.comfyui.v1"
+    # LTX frozen jobs are held until their own signed execution path exists.
+    LTX_DESKTOP_LOCAL_V1 = "production.ltx.desktop.local.v1"
 
 
 class ProductionJobStatus(StrEnum):

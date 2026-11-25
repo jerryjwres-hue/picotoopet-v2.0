@@ -65,6 +65,9 @@
           <WrapPanel Margin="0,5,0,5">
            <Button Content="复制此镜头 Prompt" Tag="{Binding}" Padding="8,4"
                    HorizontalAlignment="Left" Click="CopyCompositionPrompt_Click" Margin="0,0,8,0"/>
+           <Button Content="重抽此 FLUX 首帧" Tag="{Binding ShotId}" Padding="8,4" Margin="0,0,8,0"
+                   IsEnabled="{Binding DataContext.CanGenerateFluxDraft, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                   Click="GenerateFluxShot_Click"/>
            <Button Content="为此镜头选择参考图…" Tag="{Binding}" Padding="8,4"
                    HorizontalAlignment="Left"
                    IsEnabled="{Binding DataContext.CanEdit, RelativeSource={RelativeSource AncestorType=UserControl}}"
@@ -82,6 +85,9 @@
     <StackPanel>
      <TextBlock Text="候选清单只显示历史结果，不证明图像质量或使用权。本地 AI 输出不能自动归类为 USER_SUPPLIED；使用前须提供 LICENSED 来源凭据 SHA-256。" TextWrapping="Wrap" Margin="0,0,0,7"/>
      <WrapPanel Margin="0,0,0,8">
+      <!-- 01. Explicit FLUX generation; only the current frozen portrait Kit. -->
+      <Button Content="生成三张 FLUX 首帧" Padding="12,6" Margin="0,0,8,0"
+              IsEnabled="{Binding CanGenerateFluxDraft, FallbackValue=False}" Click="GenerateFluxBatch_Click"/>
       <Button x:Name="LoadObservedCandidatesButton" Content="读取单份候选清单..." Padding="12,6"
               HorizontalAlignment="Left" IsEnabled="{Binding CanLoadObservedCandidates, FallbackValue=False}"
               Click="LoadObservedCandidates_Click" Margin="0,0,8,0"/>
@@ -175,6 +181,7 @@
      </DataTemplate>
     </ItemsControl.ItemTemplate>
    </ItemsControl>
+   <TextBlock Text="{Binding SelectionCoverageHint}" TextWrapping="Wrap" Margin="0,4,0,6"/>
    <CheckBox x:Name="ConsentCheckBox" Margin="0,5,0,12" IsEnabled="{Binding CanEdit, FallbackValue=False}" IsChecked="{Binding UserConfirmsPreviewAndRights, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}">
     <TextBlock Text="我已逐张查看预览，确认图像与镜头对应，并拥有将这些图像用于本次视频的使用权。" TextWrapping="Wrap" />
    </CheckBox>
@@ -183,10 +190,47 @@
     <Button x:Name="RefreshBatchButton" Content="刷新 Core 回执" Padding="12,7" Margin="0,0,8,8" IsEnabled="{Binding CanRefresh, FallbackValue=False}" Click="RefreshBatch_Click" />
     <Button x:Name="OpenApprovalsButton" Content="打开审批中心" Padding="12,7" Margin="0,0,0,8" Click="OpenApprovals_Click" />
    </WrapPanel>
-   <Button x:Name="CreateReviewedPlanButton" Content="创建已审核的三镜头生产计划（不启动 GPU）"
+   <Button x:Name="CreateReviewedPlanButton" Content="{Binding ReviewedPlanLabel, FallbackValue=创建已审核生产计划}"
            HorizontalAlignment="Left" Padding="12,7" Margin="0,0,0,8"
            IsEnabled="{Binding CanCreateReviewedPlan, FallbackValue=False}" Click="CreateReviewedPlan_Click" />
-   <TextBlock Text="{Binding CreatedProductionJob.ProductionJobId, StringFormat=生产 Job：{0}}" TextWrapping="Wrap" />
+   <!-- 01. Explicit operator release; creating or refreshing a plan cannot call this. -->
+   <Button x:Name="ArmReviewedLtxJobsButton" Content="放行已冻结的 LTX 镜头（使用本地 GPU）"
+           HorizontalAlignment="Left" Padding="12,7" Margin="0,0,0,8"
+           IsEnabled="{Binding CanArmReviewedLtxJobs, FallbackValue=False}" Click="ArmReviewedLtxJobs_Click"/>
+   <TextBlock Text="{Binding CreatedProductionJob.ProductionJobId, StringFormat=首个生产 Job：{0}}" TextWrapping="Wrap" />
+   <!-- 01. Show every verified held LTX job in frozen shot order. -->
+   <ItemsControl ItemsSource="{Binding CreatedLtxJobs}">
+    <ItemsControl.ItemTemplate>
+     <DataTemplate><TextBlock Text="{Binding ProductionJobId, StringFormat=LTX Job：{0}}" TextWrapping="Wrap"/></DataTemplate>
+    </ItemsControl.ItemTemplate>
+   </ItemsControl>
+   <!-- 01. Explicit read-only result discovery; no GPU or automatic approval. -->
+   <Button Content="刷新 LTX 视频结果" HorizontalAlignment="Left" Padding="12,7" Margin="0,4,0,8"
+           IsEnabled="{Binding CanReadLtxReview, FallbackValue=False}" Click="ReadLtxReview_Click"/>
+   <ItemsControl ItemsSource="{Binding LtxReview.Shots}">
+    <ItemsControl.ItemTemplate>
+     <DataTemplate>
+      <WrapPanel Margin="0,2,0,4">
+       <TextBlock Text="{Binding ShotId}" FontWeight="SemiBold" Margin="0,0,10,0" VerticalAlignment="Center"/>
+       <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,10,0"/>
+       <Button Content="播放镜头" Tag="{Binding ShotId}" IsEnabled="{Binding CanPlay}" Click="PlayLtxShot_Click" Padding="8,3"/>
+       <Button Content="仅重抽此镜头" Tag="{Binding ShotId}" IsEnabled="{Binding CanReroll}"
+               Click="RerollLtxShot_Click" Padding="8,3" Margin="8,0,0,0"/>
+      </WrapPanel>
+     </DataTemplate>
+    </ItemsControl.ItemTemplate>
+   </ItemsControl>
+   <!-- 02. Reuse existing visual evidence: nine samples and optional private LAN model. -->
+   <WrapPanel Margin="0,4,0,8">
+    <Button Content="生成九宫格审片证据" Padding="12,7" Margin="0,0,8,0"
+            IsEnabled="{Binding CanReadLtxReview, FallbackValue=False}" Click="ObserveLtxCpu_Click"/>
+    <Button Content="本地 AI 辅助审片" Padding="12,7"
+            IsEnabled="{Binding CanReadLtxReview, FallbackValue=False}" Click="ObserveLtxVlm_Click"/>
+   </WrapPanel>
+   <TextBlock Text="{Binding LtxReview.Observation.Detail}" TextWrapping="Wrap"/>
+   <Button Content="播放完整 LTX 候选影片（待审核）" HorizontalAlignment="Left" Padding="12,7"
+           Margin="0,4,0,8" IsEnabled="{Binding LtxReview.CanPlayRoughCut, FallbackValue=False}"
+           Click="PlayLtxRoughCut_Click"/>
    <TextBlock x:Name="OperationStatusText" Text="{Binding StatusText}" TextWrapping="Wrap" Margin="0,4,0,10" AutomationProperties.LiveSetting="Polite" />
    <StackPanel>
     <TextBlock Text="Core 审批回执" FontWeight="SemiBold" />

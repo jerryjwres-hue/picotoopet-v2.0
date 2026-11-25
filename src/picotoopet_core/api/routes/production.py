@@ -29,6 +29,17 @@ from picotoopet_core.production.versioned_plan import (
     ApprovedReferenceAuthorizationV11, ProductionJobCreateV11Request, ProductionPlanV11,
     WorkerWitnessV11,
 )
+from picotoopet_core.production.ltx_plan import (
+    LtxPilotFreezeRequestV12, LtxPilotPlanV12, freeze_ltx_pilot_job,
+    load_frozen_ltx_pilot_plan,
+)
+from picotoopet_core.production.ltx_admission import (
+    LtxWorkerWitnessV12, LtxClaimReceiptV12, issue_ltx_challenge,
+    claim_ltx_first_attempt, LtxLeaseRequestV12, LtxLeaseReceiptV12, check_ltx_lease,
+    LtxReferenceCheckV12, LtxReferenceReceiptV12, check_ltx_reference,
+    LtxVendorBindingRequestV12, LtxVendorBindingReceiptV12, bind_ltx_vendor_generation,
+    LtxCandidateCommitV12, LtxCandidateReceiptV12, commit_ltx_candidate, read_ltx_candidate,
+)
 from picotoopet_core.security.auth import require_auth
 
 router = APIRouter(dependencies=[Depends(require_auth)])
@@ -51,6 +62,27 @@ def create_production_job_v11(
 ) -> ProductionJobRecord:
     # Only explicitly selected, already Approved Core reference scopes are used.
     return execute_production(lambda: request.app.state.services.production.create_job_v11(payload))
+
+
+@router.post("/production/jobs/v1.2/freeze", response_model=ProductionJobRecord)
+def freeze_production_job_v12(
+    payload: LtxPilotFreezeRequestV12, request: Request,
+) -> ProductionJobRecord:
+    # 01. Explicit renderer-specific reservation; not an executable claim.
+    return execute_production(lambda: freeze_ltx_pilot_job(
+        request.app.state.services.production, payload,
+    ))
+
+
+@router.get("/production/jobs/{production_job_id}/ltx-plan", response_model=LtxPilotPlanV12)
+def get_frozen_ltx_plan_v12(
+    production_job_id: str, request: Request,
+) -> LtxPilotPlanV12:
+    # 02. Historical plan readback retains its digest even after revocation.
+    #     It is NOT the legacy executable plan endpoint or a worker grant.
+    return execute_production(lambda: load_frozen_ltx_pilot_plan(
+        request.app.state.services.production, production_job_id,
+    ))
 
 
 @router.get("/production/jobs", response_model=list[ProductionJobRecord])
@@ -140,6 +172,120 @@ def issue_worker_challenge_v11(
         issued_at=issued_at,
         expires_at=expires_at,
     )
+
+
+class LtxWorkerChallengeResponseV12(WorkerChallengeResponseV11):
+    schema_version: Literal["production.ltx.worker_challenge.v1"] = "production.ltx.worker_challenge.v1"
+
+
+@router.post("/production/jobs/{production_job_id}/ltx-reference/check",
+             response_model=LtxReferenceReceiptV12)
+def check_production_reference_v12(
+    production_job_id: str, payload: LtxReferenceCheckV12,
+    request: Request, response: Response,
+) -> LtxReferenceReceiptV12:
+    # 01. Live reference consent for the shared Windows snapshot store.
+    #     No nonce, claim, attempt or renderer call is made.
+    response.headers["Cache-Control"] = "no-store, private"
+    return execute_production(lambda: check_ltx_reference(
+        request.app.state.services.production, production_job_id, payload,
+    ))
+
+
+@router.post("/production/jobs/{production_job_id}/ltx-worker-challenge",
+             response_model=LtxWorkerChallengeResponseV12)
+def issue_worker_challenge_v12(
+    production_job_id: str, payload: WorkerChallengeRequestV11,
+    request: Request, response: Response,
+) -> LtxWorkerChallengeResponseV12:
+    # 01. The challenge is renderer-specific, not a lease or GPU permit.
+    nonce, issued_at, expires_at = execute_production(lambda: issue_ltx_challenge(
+        request.app.state.services.production, production_job_id,
+        payload.worker_key_id, payload.executor_id, payload.plan_digest,
+    ))
+    response.headers["Cache-Control"] = "no-store, private"
+    return LtxWorkerChallengeResponseV12(
+        worker_key_id=payload.worker_key_id, executor_id=payload.executor_id,
+        production_job_id=production_job_id, plan_digest=payload.plan_digest,
+        nonce=nonce, issued_at=issued_at, expires_at=expires_at,
+    )
+
+
+@router.post("/production/jobs/{production_job_id}/ltx-claim",
+             response_model=LtxClaimReceiptV12)
+def claim_production_job_v12(
+    production_job_id: str, payload: LtxWorkerWitnessV12,
+    request: Request, response: Response,
+) -> LtxClaimReceiptV12:
+    # 02. One explicit signed claim reserves exactly one LTX attempt.
+    #     This route cannot execute a renderer or call the Windows GPU.
+    response.headers["Cache-Control"] = "no-store, private"
+    return execute_production(lambda: claim_ltx_first_attempt(
+        request.app.state.services.production, production_job_id, payload,
+    ))
+
+
+@router.post("/production/jobs/{production_job_id}/ltx-vendor/bind",
+             response_model=LtxVendorBindingReceiptV12)
+def bind_production_ltx_vendor_v12(
+    production_job_id: str, payload: LtxVendorBindingRequestV12,
+    request: Request, response: Response,
+) -> LtxVendorBindingReceiptV12:
+    # 01. Bind the exact acknowledged generation; no new attempt or render.
+    response.headers["Cache-Control"] = "no-store, private"
+    return execute_production(lambda: bind_ltx_vendor_generation(
+        request.app.state.services.production, production_job_id, payload,
+    ))
+
+
+@router.post("/production/jobs/{production_job_id}/ltx-candidate/result",
+             response_model=LtxCandidateReceiptV12)
+def commit_production_ltx_candidate_v12(
+    production_job_id: str, payload: LtxCandidateCommitV12,
+    request: Request, response: Response,
+) -> LtxCandidateReceiptV12:
+    # 01. First-shot technical evidence only; never certify a whole film.
+    response.headers["Cache-Control"] = "no-store, private"
+    return execute_production(lambda: commit_ltx_candidate(
+        request.app.state.services.production, production_job_id, payload,
+    ))
+
+
+@router.get("/production/jobs/{production_job_id}/ltx-candidate/result",
+            response_model=LtxCandidateReceiptV12)
+def read_production_ltx_candidate_v12(
+    production_job_id: str, request: Request, response: Response,
+) -> LtxCandidateReceiptV12:
+    # 01. Authenticated historical evidence for local review/assembly only.
+    response.headers["Cache-Control"] = "no-store, private"
+    return execute_production(lambda: read_ltx_candidate(
+        request.app.state.services.production, production_job_id,
+    ))
+
+
+@router.post("/production/jobs/{production_job_id}/ltx-lease/recheck",
+             response_model=LtxLeaseReceiptV12)
+def recheck_production_lease_v12(
+    production_job_id: str, payload: LtxLeaseRequestV12,
+    request: Request, response: Response,
+) -> LtxLeaseReceiptV12:
+    # 03. No new claim or GPU work; recheck the same signed reservation.
+    response.headers["Cache-Control"] = "no-store, private"
+    return execute_production(lambda: check_ltx_lease(
+        request.app.state.services.production, production_job_id, payload,
+    ))
+
+
+@router.post("/production/jobs/{production_job_id}/ltx-lease/heartbeat",
+             response_model=LtxLeaseReceiptV12)
+def heartbeat_production_lease_v12(
+    production_job_id: str, payload: LtxLeaseRequestV12,
+    request: Request, response: Response,
+) -> LtxLeaseReceiptV12:
+    response.headers["Cache-Control"] = "no-store, private"
+    return execute_production(lambda: check_ltx_lease(
+        request.app.state.services.production, production_job_id, payload, renew=True,
+    ))
 
 
 @router.post("/production/jobs/{production_job_id}/witness/preflight", status_code=204)

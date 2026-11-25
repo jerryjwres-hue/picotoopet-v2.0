@@ -51,7 +51,8 @@ public static class ReviewPolicy
     public static void Validate(InputManifest input)
     {
         // Identity         : never infer shot/order/task from filenames or a GUI label.
-        if (input.SchemaVersion != "visual_review.input.v1"
+        // 01. LTX is an explicit separate input contract; legacy WebM remains unchanged.
+        if (input.SchemaVersion is not ("visual_review.input.v1" or "visual_review.ltx.input.v1")
             || !Guid.TryParse(input.JobId, out _)
             || input.Shots is null || input.Shots.Count != 3)
             throw new InvalidOperationException("INVALID_EXACT_THREE_SHOT_MANIFEST");
@@ -66,6 +67,10 @@ public static class ReviewPolicy
                 || !Regex.IsMatch(shot.TaskId, "^[a-zA-Z0-9_-]{1,80}$")
                 || !ids.Add(shot.ShotId) || !tasks.Add(shot.TaskId)
                 || !paths.Add(shot.RelativePath)
+                || (input.SchemaVersion == "visual_review.ltx.input.v1"
+                    && (!shot.RelativePath.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase)
+                        || shot.ExpectedFrames is < 95 or > 97
+                        || shot.ExpectedDurationMs is < 3916 or > 4084))
                 || !Regex.IsMatch(shot.Sha256, "^[a-fA-F0-9]{64}$")
                 || shot.Bytes < 128 || shot.ExpectedFrames is < 1 or > 10000
                 || shot.ExpectedDurationMs is < 250 or > 60000
@@ -295,12 +300,23 @@ public static class ReviewRunner
         return answer.RootElement.GetProperty("response").GetString() ?? throw new InvalidOperationException("VLM_EMPTY");
     }
 
-    public static async Task<ReviewReport> ExecuteAsync(ReviewOptions opts)
+    public static Task<ReviewReport> ExecuteAsync(ReviewOptions opts) =>
+        ExecuteAsync(opts, RunAsync);
+
+    // 01. Installed Desktop injects its existing bounded process runner;
+    //     no external observer executable or duplicate extraction pipeline.
+    public static async Task<ReviewReport> ExecuteAsync(ReviewOptions opts,
+        Func<string, IEnumerable<string>, TimeSpan, Task<string>> media)
     {
         // Preflight        : manifest/containment and consent before any tool or network calls.
         var input = JsonSerializer.Deserialize<InputManifest>(await File.ReadAllTextAsync(opts.Manifest), ReviewPolicy.Json)
             ?? throw new InvalidOperationException("INPUT_MANIFEST_EMPTY");
         ReviewPolicy.Validate(input);
+        var portrait = input.SchemaVersion == "visual_review.ltx.input.v1";
+        var demuxer = portrait ? "mov" : "matroska";
+        var scale = portrait
+            ? "scale=320:568:force_original_aspect_ratio=decrease,pad=320:568:(ow-iw)/2:(oh-ih)/2"
+            : "scale=320:180:force_original_aspect_ratio=decrease,pad=320:180:(ow-iw)/2:(oh-ih)/2";
         if (!Directory.Exists(opts.ComfyRoot)) throw new InvalidOperationException("COMFY_OUTPUT_ROOT_NOT_FOUND");
         ReviewPolicy.SafeOutput(opts.ComfyRoot, opts.Output);
         var sources = input.Shots.Select(s => ReviewPolicy.SafeSource(opts.ComfyRoot, s.RelativePath)).ToArray();
@@ -320,8 +336,8 @@ public static class ReviewRunner
                 if (!before.Equals(shot.Sha256, StringComparison.OrdinalIgnoreCase)
                     || new FileInfo(source).Length != shot.Bytes)
                     throw new InvalidOperationException("SOURCE_SHA256_OR_BYTES_MISMATCH");
-                var probeJson = await RunAsync(opts.Ffprobe,
-                    ["-v", "error", "-protocol_whitelist", "file,pipe", "-f", "matroska", "-count_frames", "-select_streams", "v:0",
+                var probeJson = await media(opts.Ffprobe,
+                    ["-v", "error", "-protocol_whitelist", "file,pipe", "-f", demuxer, "-count_frames", "-select_streams", "v:0",
                      "-show_entries", "stream=codec_type,nb_read_frames:format=duration", "-of", "json", source],
                     TimeSpan.FromSeconds(30));
                 var (duration, count) = ParseProbe(probeJson);
@@ -334,11 +350,11 @@ public static class ReviewRunner
                     var ms = Math.Min(duration - 50, Math.Max(1, duration * (k + 1) / 4));
                     var name = $"frame_{i * 3 + k:00}.png";
                     var framePath = Path.Combine(framesDir, name);
-                    await RunAsync(opts.Ffmpeg,
+                    await media(opts.Ffmpeg,
                         ["-hide_banner", "-loglevel", "error", "-nostdin", "-ss",
                          (ms / 1000.0).ToString("F3", CultureInfo.InvariantCulture),
-                         "-protocol_whitelist", "file,pipe", "-f", "matroska", "-hwaccel", "none", "-i", source, "-frames:v", "1", "-vf",
-                         "scale=320:180:force_original_aspect_ratio=decrease,pad=320:180:(ow-iw)/2:(oh-ih)/2",
+                         "-protocol_whitelist", "file,pipe", "-f", demuxer, "-hwaccel", "none", "-i", source, "-map", "0:v:0", "-frames:v", "1", "-vf",
+                         scale,
                          "-y", framePath], TimeSpan.FromSeconds(40));
                     if (!File.Exists(framePath)) throw new InvalidOperationException("FRAME_NOT_EXTRACTED");
                     samples.Add(new FrameEvidence(i * 3 + k, shot.Order, shot.ShotId,
@@ -350,7 +366,7 @@ public static class ReviewRunner
                     shot.Action, samples));
             }
             var sheet = Path.Combine(opts.Output, "contact_sheet_3x3.png");
-            await RunAsync(opts.Ffmpeg,
+            await media(opts.Ffmpeg,
                 ["-hide_banner", "-loglevel", "error", "-nostdin", "-protocol_whitelist", "file,pipe", "-framerate", "1",
                  "-i", Path.Combine(framesDir, "frame_%02d.png"), "-vf",
                  "tile=3x3:padding=4:margin=4", "-frames:v", "1", "-y", sheet],

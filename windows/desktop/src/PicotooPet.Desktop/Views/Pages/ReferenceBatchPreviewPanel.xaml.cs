@@ -1,5 +1,6 @@
 using System.Windows;
 using PicotooPet.Desktop.ViewModels;
+using PicotooPet.Desktop.Services; // Existing local media path and file policies.
 using UserControl = System.Windows.Controls.UserControl;
 using Button = System.Windows.Controls.Button;
 using ComboBoxItem = System.Windows.Controls.ComboBoxItem;
@@ -147,6 +148,32 @@ public partial class ReferenceBatchPreviewPanel : UserControl
         {
             OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty,
                 "工作单与封存 Creative Kit 不匹配，未导入资产或触发审批。");
+        }
+    }
+
+    // 01. Explicit local GPU consent; no automatic selection or approval.
+    private async void GenerateFluxBatch_Click(object sender, RoutedEventArgs e)
+        => await GenerateFluxAsync(null);
+
+    private async void GenerateFluxShot_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: string shotId }) await GenerateFluxAsync(shotId);
+    }
+
+    private async Task GenerateFluxAsync(string? shotId)
+    {
+        if (DataContext is not ReferenceBatchPreviewViewModel vm || !vm.CanGenerateFluxDraft) return;
+        var description = shotId is null ? "三个镜头" : shotId;
+        if (System.Windows.MessageBox.Show($"使用本地 GPU 生成 {description} 的 FLUX 首帧候选？不会自动批准或生成视频。",
+            "确认首帧生成", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        try
+        {
+            _observedOutputRoot = await vm.GenerateFluxDraftAsync(shotId);
+            OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, vm.StatusText);
+        }
+        catch (Exception)
+        {
+            OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, vm.StatusText);
         }
     }
 
@@ -323,10 +350,110 @@ public partial class ReferenceBatchPreviewPanel : UserControl
     {
         if (DataContext is not ReferenceBatchPreviewViewModel vm || !vm.CanCreateReviewedPlan) return;
         // 独立显式操作：不会由收到 Approved 回执自动触发。
-        if (System.Windows.MessageBox.Show("创建与当前三张已批参考图绑定的生产计划？此操作不启动 GPU。",
-                "确认三镜头生产计划", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        if (System.Windows.MessageBox.Show(vm.ReviewedPlanLabel + "？此操作不启动 GPU。",
+                "确认冻结生产计划", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
         try { await vm.CreateReviewedPlanAsync(); }
         catch (Exception) { OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, vm.StatusText); }
+    }
+
+    // 01. Explicit user action only. The confirmation describes the actual
+    //     GPU consequence; no local gate is changed from automatic refresh.
+    private async void ArmReviewedLtxJobs_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ReferenceBatchPreviewViewModel vm || !vm.CanArmReviewedLtxJobs) return;
+        if (System.Windows.MessageBox.Show(
+            $"放行这 {vm.CreatedLtxJobs.Count} 个已冻结镜头？运行中的本地 Worker 将使用 GPU 顺序生成；不会自动批准画面或成片。",
+            "确认本地 GPU 生产", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        try { await vm.ArmReviewedLtxJobsAsync(); }
+        catch (Exception) { OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, vm.StatusText); }
+    }
+
+    // 01. Refresh verifies historical Core evidence and local bytes only.
+    private async void ReadLtxReview_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ReferenceBatchPreviewViewModel vm || !vm.CanReadLtxReview) return;
+        try { await vm.ReadLtxReviewAsync(); }
+        catch (Exception) { OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, vm.StatusText); }
+    }
+
+    private async void ObserveLtxCpu_Click(object sender, RoutedEventArgs e)
+        => await ObserveLtxAsync(false);
+
+    private async void ObserveLtxVlm_Click(object sender, RoutedEventArgs e)
+        => await ObserveLtxAsync(true);
+
+    private async Task ObserveLtxAsync(bool localVlm)
+    {
+        if (DataContext is not ReferenceBatchPreviewViewModel vm || !vm.CanReadLtxReview) return;
+        // 03. Explicit consent for the exact local model's three sampled
+        //     frames, never an implicit cloud upload or approval.
+        if (localVlm && System.Windows.MessageBox.Show(
+            "允许将三个镜头的中间帧发送到已配置的私有局域网 Ollama 模型进行辅助审阅？不代表正式通过。",
+            "确认本地 AI 审片", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        try
+        {
+            var result = await vm.ObserveLtxReviewAsync(localVlm);
+            OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, vm.StatusText);
+            if (result.Observation?.EvidenceDirectory is { } evidence)
+            {
+                var sheet = Path.Combine(evidence, "contact_sheet_3x3.png");
+                if (ProductionLocalEnvironment.IsOrdinaryFile(sheet))
+                {
+                    ProductionLocalEnvironment.AssertNoLinkEscape(Path.GetPathRoot(sheet)!, sheet);
+                    using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(sheet)
+                        { UseShellExecute = true });
+                }
+            }
+        }
+        catch (Exception) { OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, vm.StatusText); }
+    }
+
+    private async void RerollLtxShot_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ReferenceBatchPreviewViewModel vm || !vm.CanReadLtxReview
+            || sender is not Button { Tag: string shotId }) return;
+        if (System.Windows.MessageBox.Show(
+            $"仅重新生成 {shotId}？将使用本地 GPU，保留其他两段和旧影片。",
+            "确认单镜头抽卡", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        try { await vm.RerollLtxShotAsync(shotId); }
+        catch (Exception) { OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, vm.StatusText); }
+    }
+
+    private async void PlayLtxShot_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ReferenceBatchPreviewViewModel vm || !vm.CanReadLtxReview
+            || sender is not Button { Tag: string shotId }) return;
+        try
+        {
+            var result = await vm.ReadLtxReviewAsync();
+            if (result.Shots.SingleOrDefault(shot => shot.ShotId == shotId)?.LocalPath is { } path)
+                OpenVerifiedLtxVideo(path);
+        }
+        catch (Exception) { OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, "无法打开已核验的本地镜头。"); }
+    }
+
+    private async void PlayLtxRoughCut_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ReferenceBatchPreviewViewModel vm || !vm.CanReadLtxReview) return;
+        try
+        {
+            var result = await vm.ReadLtxReviewAsync();
+            if (result.RoughCutPath is { } path) OpenVerifiedLtxVideo(path);
+        }
+        catch (Exception) { OperationStatusText.SetCurrentValue(System.Windows.Controls.TextBlock.TextProperty, "无法打开已核验的本地候选影片。"); }
+    }
+
+    private static void OpenVerifiedLtxVideo(string path)
+    {
+        // 02. Explicit click opens only a freshly verified local MP4. Never
+        //     execute a caller-provided command or send media to a remote URL.
+        if (!MasterVideoPathPolicy.IsSafeLocalFullyQualified(path)
+            || !path.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase)
+            || !ProductionLocalEnvironment.IsOrdinaryFile(path))
+            throw new InvalidDataException("LTX_REVIEW_LOCAL_FILE_REQUIRED");
+        ProductionLocalEnvironment.AssertNoLinkEscape(Path.GetPathRoot(path)!, path);
+        using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path)
+        { UseShellExecute = true });
     }
 
     private void OpenApprovals_Click(object sender, RoutedEventArgs e) => ApprovalsRequested?.Invoke(this, EventArgs.Empty);

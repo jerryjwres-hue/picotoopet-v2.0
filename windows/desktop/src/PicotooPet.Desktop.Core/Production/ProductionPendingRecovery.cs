@@ -14,6 +14,9 @@ public sealed class ProductionPendingRecovery(ProductionSubmissionJournal journa
         using var gpu = journal.AcquireGpu();
         var pending = journal.Pending();
         if (pending.Count == 0) return new(false, null);
+        // 01. Never send a Desktop generation ID to the Comfy reconciler.
+        //     A future LTX-specific recovery path must settle these records.
+        if (pending.Any(p => p.IsLtx)) return new(true, null);
         string? recover = null;
         foreach (var group in pending.GroupBy(p => p.JobId, StringComparer.Ordinal))
         {
@@ -41,6 +44,8 @@ public sealed class ProductionPendingRecovery(ProductionSubmissionJournal journa
         ProductionSubmission item, CancellationToken ct = default)
     {
         if (item.Phase == "Settled") return;
+        // 02. Direct terminal reconciliation must also fail closed.
+        if (item.IsLtx) throw new ProductionWorkerException("MEDIA_LTX_RECOVERY_REQUIRED");
         if (item.Phase == "Prepared" && item.PromptId is null)
         { journal.Save(item with { Phase = "Settled" }); return; }
         var prompt = item.PromptId ?? await reconciler.FindExactAsync(item.GraphDigest, ct).ConfigureAwait(false);

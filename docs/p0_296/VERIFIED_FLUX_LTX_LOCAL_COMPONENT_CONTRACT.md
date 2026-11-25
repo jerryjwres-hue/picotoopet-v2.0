@@ -23,22 +23,20 @@ Windows user-home paths in this repository. No GPU work is authorized.
   architecture or CPU-only CI validation.
 - Existing C8B master SHA:
   `c6d7e556b8047d06d6ba7c408e8fdde26d3d16dd59d3c029e901847beac8f59b`.
-- B1 scene `PL3b_E_dogeye_in_strip_v2.png`: the retrieved inventory
-  records **only a prefix/suffix** `c89f7c8d…c043`, not a complete
-  SHA256. Therefore no full B1 hash is pinned in source. The selected
-  Windows scene image must be rehashed and then resolved against a
-  registered, Owner-approved Core artifact before production.
+- B1 scene `PL3b_E_dogeye_in_strip_v2.png`: the available inventory
+  records only `c89f7c8d…c043` (prefix/suffix), **not** the full SHA.
+  Do not pin an invented B1 digest. Independently rehash the Windows B1
+  bytes and resolve them to an approved Core artifact before production.
 - Existing LoRA v2 SHA:
   `5972e7f782e3e4ed16b764441fdb66d638cb6a8ba85fb8226d95feeb98e8eb70`,
   46,223,616 bytes. v1/c001 is archived, not an alternate identity source.
 
 `scripts/prepare_existing_flux_board_shot.py` is an optional **CPU-only**
 preparation bridge. It checks the unmodified private source SHA, reads the
-actual local C8B, user-selected scene and LoRA bytes, invokes only its exact
-existing `build()` on verified bytes, and writes a single-shot legacy jobs
-file plus the exact candidate graph and provenance manifest. This verifies
-the scene's local digest but **does not** independently establish its B1
-identity, Core registry binding or Owner approval. It **does not** start ComfyUI, copy
+actual local C8B, selected scene and LoRA bytes, invokes only the verified
+original `build()`, and writes one legacy job, exact candidate graph
+and an unapproved manifest. The local scene hash does not establish a
+Core asset binding, Owner approval or geometry continuity. It **does not** start ComfyUI, copy
 assets, submit a prompt or mark a character/first frame approved.
 
 A suitable JSON request (locally owned, not stored in this repository) is:
@@ -60,7 +58,7 @@ A suitable JSON request (locally owned, not stored in this repository) is:
     {
       "role": "scene_master",
       "relative_path": "refs/B1_scene_master.png",
-      "sha256": "<exact complete SHA256 from local Windows B1 inventory>"
+      "sha256": "<exact complete B1 SHA256 from Windows inventory>"
     }
   ]
 }
@@ -116,3 +114,66 @@ output profile, accepted per-shot first frames, frozen StoryPack+ProductionPlan,
 a signed Worker attempt with local-only LTX execution and artifact receipts,
 then visual review. Original 11-21 horizontal StoryPack stays unchanged.
 GPU HOLD remains asserted until those gates are genuinely satisfied.
+
+
+## P0-4A code delivered: native Windows local-only four-second preflight
+
+`windows/desktop/src/PicotooPet.Desktop.Core/Production/LtxDesktopLocalI2vPreflightClient.cs`
+exercises the **actual existing 1.3.1 local vendor GET routes** on
+`127.0.0.1:41955` without ever POSTing. It checks a selected local first
+frame's entire SHA256, the two local generation settings, authenticated
+session, empty local queue, **installed** `ltx-2.5-fast` with 720p / 9:16 /
+24 fps / 4-second advertised capability, and nonduplicate image-to-video
+history by prompt, model, ratio, duration, fps and seed.
+
+The returned payload preserves actual vendor field names and is deliberately
+**non-submittable**: `inputs.startFrame.assetId = null`, owner approval
+`false`, generation lane verification `false`, `can_submit=false`,
+`gpu_post=0`. It does not create another job scheduler, another credential
+file or another submission journal.
+
+For this adapter, `SourceOutputProfile` must be explicitly
+`design_portrait`: the 11-21 original `p0_landscape` source must NOT
+be converted by an incidental Worker or test. That explicit source-profile
+choice does not certify the LTX output pixels or authorize any upload.
+
+**P0-4B remains**: tie to the existing signed Core ProductionPlan/Attempt,
+current `ProductionSubmissionJournal` and GPU Lease; reuse DPAPI pairing
+from the original local controller; upload the exact pinned first frame once,
+POST the vendor payload once, retain a persistent uncertain-submission lock,
+check returned `Generation.lane == local`, safely export, verify actual
+MP4 geometry and 97 frames, then commit the result via existing Core API.
+No execution of P0-4B or private LTX tasks is authorized here.
+
+
+## P0-4B1 completed-vendor-record inspection (read-only)
+
+New LtxDesktopLocalI2vResultInspection.cs reads exactly one authenticated
+GET /api/generations/{generationId}. It never chooses a recent task by time,
+uploads an asset, POSTs a generation, downloads media or modifies Core.
+Valid generation and startFrame asset UUIDs must come from an earlier
+submission receipt, not from an unverified filename.
+
+Exact readback gates:
+- Response id and status=succeeded plus literal Generation.lane=local.
+  Historic S1/S2 receipts lacking lane remain UNVERIFIED.
+- spec.params exactly matches frozen prompt, ltx-2.5-fast, 720p, 9:16,
+  duration=4, fps=24, seed, cameraMotion=none, negativePrompt empty,
+  promptProvenance=typed.
+- spec.inputs.startFrame.assetId equals the expected uploaded asset UUID.
+- Exactly one video asset, video/mp4 or video/webm, with a relative only
+  vendor /api/assets/<asset-id>/bytes?... signed route. No returned
+  receipt contains the signed URL or the Bearer token.
+
+If installed LTX Desktop 1.3.1 omits lane or spec.inputs, the result remains
+BLOCKED / UNVERIFIED. Never silently infer a local execution lane.
+
+The returned evidence always says CanCommitProductionResult=false,
+MediaBytesDownloaded=false, MediaGeometryVerified=false, GpuPost=0.
+That is vendor metadata inspection ONLY; not Core authorization, accepted
+first-frame bytes, an MP4 audit or a final ProductionTask commit.
+
+P0-4B2 remains: signed Core Plan/Attempt, existing durable journal and GPU
+lease, source-matched first-frame upload, exactly ONE vendor generation POST,
+safe authenticated asset export and verified actual 97-frame output prior
+to any Core CommitResult. No engine execution is authorized by P0-4B1.

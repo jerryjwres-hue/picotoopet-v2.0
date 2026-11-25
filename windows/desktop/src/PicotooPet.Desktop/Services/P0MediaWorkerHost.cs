@@ -8,6 +8,7 @@ using PicotooPet.Desktop.Core.Logging;
 using PicotooPet.Desktop.Core.Security;
 using PicotooPet.Desktop.Core.State;
 using PicotooPet.Desktop.Core.Contracts;
+using PicotooPet.Desktop.Services.ProductionReference;
 
 namespace PicotooPet.Desktop.Services;
 
@@ -81,6 +82,8 @@ public static class P0MediaWorkerHost
                     journal, reconciler, session.GetProductionJobAsync);
                 var backoff = new System.Collections.Generic.Dictionary<string, DateTimeOffset>(
                     StringComparer.Ordinal);
+                // 01. Avoid reassembling a verified immutable rough cut every poll.
+                var assembledLtxBatches = new HashSet<string>(StringComparer.Ordinal);
                 var connected = false;
                 var explicitStop = false;
                 while (!cancellationToken.IsCancellationRequested && !explicitStop)
@@ -127,6 +130,64 @@ public static class P0MediaWorkerHost
                         }
                         else
                         {
+                        // 01. Explicit LTX pilot takes the same exclusive scheduling
+                        //     slot as Wan. Never route a v1.2 job to the Wan parser.
+                        var ltxJobs = await session.GetProductionJobsAsync(cancellationToken).ConfigureAwait(false);
+                        var ltxSelection = await P0ThreeShotAcceptanceGate.SelectLtxAsync(
+                            session, ltxJobs, cancellationToken).ConfigureAwait(false);
+                        if (ltxSelection is not null)
+                        {
+                            if (stopSignal.WaitOne(0)) break;
+                            // 01. Candidate assembly uses the same authenticated session
+                            //     and the existing FFmpeg/QA primitives, no new GPU work.
+                            if (ltxSelection.SettledJobs is { Count: 3 } completed
+                                && ltxSelection.BatchIdentity is string batchId)
+                            {
+                                if (!assembledLtxBatches.Contains(batchId)
+                                    && (!backoff.TryGetValue(batchId, out var assembleAfter)
+                                        || assembleAfter <= DateTimeOffset.UtcNow))
+                                {
+                                    try
+                                    {
+                                        await LtxRoughCutAssembly.AssembleAsync(session, completed, batchId,
+                                            cancellationToken).ConfigureAwait(false);
+                                        assembledLtxBatches.Add(batchId);
+                                        backoff.Remove(batchId);
+                                        logger.Info("LTX_ROUGH_CUT_READY; VISUAL_REVIEW_REQUIRED");
+                                    }
+                                    catch (Exception) when (!cancellationToken.IsCancellationRequested)
+                                    {
+                                        logger.Info("LTX_ROUGH_CUT_PAUSED; source candidates retained");
+                                        backoff[batchId] = DateTimeOffset.UtcNow + FailureBackoff;
+                                    }
+                                }
+                                await Task.Delay(PollInterval, cancellationToken).ConfigureAwait(false);
+                                continue;
+                            }
+                            var ltxJob = ltxSelection.Job
+                                ?? throw new InvalidDataException("LTX_SELECTION_INVALID");
+                            if (!backoff.TryGetValue(ltxJob.ProductionJobId, out var ltxAfter)
+                                || ltxAfter <= DateTimeOffset.UtcNow)
+                            {
+                                try
+                                {
+                                    await LtxProductionExecutor.RunAsync(session, ltxJob, journal, cancellationToken,
+                                        ltxSelection.BatchIdentity)
+                                        .ConfigureAwait(false);
+                                    backoff.Remove(ltxJob.ProductionJobId);
+                                }
+                                catch (Exception) when (!cancellationToken.IsCancellationRequested)
+                                {
+                                    // 02. Do not log vendor data or credentials. Any
+                                    //     uncertain reservation remains in the shared journal.
+                                    logger.Info("LTX_PILOT_PAUSED; pending journal retained");
+                                    backoff[ltxJob.ProductionJobId] = DateTimeOffset.UtcNow + FailureBackoff;
+                                }
+                            }
+                            // 03. A selected LTX slot cannot fall through into Wan.
+                            await Task.Delay(PollInterval, cancellationToken).ConfigureAwait(false);
+                            continue;
+                        }
                         var goals = await session.GetGoalsAsync(cancellationToken).ConfigureAwait(false);
                         foreach (var goal in goals)
                         {
@@ -311,7 +372,9 @@ public static class P0MediaWorkerHost
     {
         foreach (var job in jobs)
         {
-            if (job.Status is not ("Ready" or "Claimed")
+            // The existing Wan worker is not the LTX signed worker.
+            if (job.ProductionProfile != "production.comfyui.v1"
+                || job.Status is not ("Ready" or "Claimed")
                 || !P0ThreeShotAcceptanceGate.HasExplicitAllowFor(job.ProductionJobId)) continue;
             var plan = await session.GetProductionPlanAsync(job.ProductionJobId, ct).ConfigureAwait(false);
             if (plan.SchemaVersion == "1.1"

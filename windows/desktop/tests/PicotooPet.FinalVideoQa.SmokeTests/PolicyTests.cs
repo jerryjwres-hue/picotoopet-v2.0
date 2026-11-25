@@ -49,6 +49,26 @@ internal static class PolicyTests
             Reject("UNEXPECTED_STREAM", () => FinalVideoQaMediaProbe.Parse(probe.Replace("\"codec_type\":\"video\"", $"\"codec_type\":\"{kind}\"", StringComparison.Ordinal)));
         Reject("UNEXPECTED_STREAM", () => FinalVideoQaMediaProbe.Parse(probe.Replace("\"chapters\":[]", "\"chapters\":[{\"id\":0}]", StringComparison.Ordinal)));
         Reject("CONTAINER_INVALID", () => FinalVideoQaMediaProbe.Parse(probe.Replace("mov,mp4,m4a,3gp,3g2,mj2", "matroska", StringComparison.Ordinal)));
+        // 01. A native candidate is not the final mastered vertical profile.
+        var ltx = new FinalQaObservedMedia("mp4", 4_000_000, 1,
+            new(0, "h264", "yuv420p", 720, 1280, 24, 1, 4_000_000, 96), null);
+        var measured = FinalVideoQaMediaProbe.ValidateLtxCandidate(ltx, 96);
+        if (measured != new LtxCandidateMediaFacts(720, 1280, 96, 24, 4000))
+            throw new InvalidOperationException("LTX actual geometry changed");
+        Reject("OUTPUT_PROFILE_MISMATCH", () => FinalVideoQaMediaProbe.ValidateLtxCandidate(
+            ltx with { Video = ltx.Video with { Width = 1280, Height = 720 } }, 96));
+        Reject("RUNTIME_MISMATCH", () => FinalVideoQaMediaProbe.ValidateLtxCandidate(ltx, 90));
+        Reject("OUTPUT_PROFILE_MISMATCH", () => FinalVideoQaMediaProbe.ValidateLtxCandidate(
+            ltx with { Video = ltx.Video with { FpsNumerator = 25 } }, 96));
+        // 02. Native rough-cut output keeps 720p without modifying final-film QA.
+        var rough = ltx with { Video = ltx.Video with { DurationUs = 12_000_000, PacketCount = 288 },
+            FormatDurationUs = 12_000_000 };
+        FinalVideoQaMediaProbe.ValidateLtxRoughCut(rough);
+        Reject("OUTPUT_PROFILE_MISMATCH", () => FinalVideoQaMediaProbe.Validate(rough, "video.vertical.v1", false, 288, 12000));
+        Reject("RUNTIME_MISMATCH", () => FinalVideoQaMediaProbe.ValidateLtxRoughCut(
+            rough with { Video = rough.Video with { PacketCount = 287 } }));
+        Reject("AUDIO_STREAM_INVALID", () => FinalVideoQaMediaProbe.ValidateLtxRoughCut(
+            rough with { Audio = new(1, "aac", "LC", 48000, 1, "mono", 12_000_000), StreamCount = 2 }));
         Console.WriteLine("QA_BOUNDARIES=PASS");
     }
     private static void Reject(string error, Action action)

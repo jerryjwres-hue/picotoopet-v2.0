@@ -9,7 +9,17 @@ namespace PicotooPet.Desktop.Core.Production;
 /// <summary>只记录提交不确定性，不保存 lease/token/原文，不替代 Core 成功/失败事实。</summary>
 public sealed record ProductionSubmission(string JobId, string TaskId, string PlanDigest,
     string GraphDigest, string Phase, string? PromptId, string? FailureCode = null,
-    string? PreviousPromptId = null, DateTimeOffset? PreviousTaskUpdatedAtUtc = null);
+    string? PreviousPromptId = null, DateTimeOffset? PreviousTaskUpdatedAtUtc = null,
+    // 01. Omitted fields preserve the legacy Wan JSON shape and digest.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Renderer = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? VendorStartFrameAssetId = null)
+{
+    public const string LtxRenderer = "ltx.desktop.local.i2v.v1";
+
+    // 02. Legacy records have no renderer field and continue to mean Wan.
+    [JsonIgnore]
+    public bool IsLtx => Renderer == LtxRenderer;
+}
 
 public sealed class ProductionWorkerException(string code) : Exception(code)
 {
@@ -32,7 +42,20 @@ public sealed class ProductionSubmissionJournal
         if (!Path.IsPathFullyQualified(root)) throw new ProductionWorkerException("MEDIA_JOURNAL_INVALID");
         _root = Path.GetFullPath(root);
     }
-    public GpuLease AcquireGpu() => new(this, Acquire("gpu.lock"));
+    public GpuLease AcquireGpu()
+    {
+        var file = Acquire("gpu.lock");
+        // 01. A stopped/uncertain creative draft runner must not be bypassed
+        //     by a later production claim, even if its OS handle was released.
+        try
+        {
+            var marker = Path.Combine(_root, "flux-draft-in-progress.json");
+            if (File.Exists(marker) || Directory.Exists(marker))
+                throw new ProductionWorkerException("MEDIA_FLUX_DRAFT_RECONCILIATION_REQUIRED");
+            return new(this, file);
+        }
+        catch { file.Dispose(); throw; }
+    }
     /// <summary>Evidence of the actual held file lock, scoped to this journal instance.</summary>
     public sealed class GpuLease : IDisposable
     {
@@ -119,8 +142,23 @@ public sealed class ProductionSubmissionJournal
     }
     private static void Validate(ProductionSubmission s)
     {
+        // 03. LTX uses an explicitly tagged generation ID, never a Comfy
+        //     prompt. Preserve asset identity once the upload is acknowledged.
+        if (s.Renderer is not (null or ProductionSubmission.LtxRenderer)
+            || (!s.IsLtx && s.VendorStartFrameAssetId is not null)
+            || (!s.IsLtx && s.Phase is ("Claiming" or "Claimed"))
+            || (s.IsLtx && (s.Phase is not ("Claiming" or "Claimed" or "Submitting" or "Submitted" or "Settled")
+                || (s.Phase is ("Claiming" or "Claimed") && (s.PromptId is not null || s.VendorStartFrameAssetId is not null))
+                || s.FailureCode is not null || s.PreviousPromptId is not null
+                || s.PreviousTaskUpdatedAtUtc is not null
+                || (s.VendorStartFrameAssetId is not null
+                    && !Guid.TryParseExact(s.VendorStartFrameAssetId, "D", out _))
+                || (s.Phase == "Submitted" && (s.VendorStartFrameAssetId is null
+                    || !Guid.TryParseExact(s.PromptId, "D", out _))))))
+            throw new ProductionWorkerException("MEDIA_JOURNAL_INVALID");
+
         if (string.IsNullOrWhiteSpace(s.JobId) || s.JobId.Length > 160 || string.IsNullOrWhiteSpace(s.TaskId) || s.TaskId.Length > 160
-            || !Sha(s.PlanDigest) || !Sha(s.GraphDigest) || s.Phase is not ("Prepared" or "RetryPrepared" or "Submitting" or "Submitted" or "FailurePending" or "Settled")
+            || !Sha(s.PlanDigest) || !Sha(s.GraphDigest) || s.Phase is not ("Prepared" or "RetryPrepared" or "Claiming" or "Claimed" or "Submitting" or "Submitted" or "FailurePending" or "Settled")
             || s.PromptId is { Length: > 200 } || s.PreviousPromptId is { Length: > 200 } 
             || (s.Phase == "RetryPrepared" && (s.PromptId is not null || string.IsNullOrWhiteSpace(s.PreviousPromptId)
                 || s.PreviousTaskUpdatedAtUtc is null))

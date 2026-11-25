@@ -82,6 +82,16 @@ internal static class Program
                 return 0;
             }
 
+            if (args.Contains("--ltx-local-only", StringComparer.Ordinal))
+            {
+                // 01. Only synthetic local REST GETs: no paired token,
+                //     real LTX Desktop process, GPU or user-owned media.
+                await LtxDesktopLocalI2vPreflightSmokeTests.RunAsync().ConfigureAwait(false);
+            await LtxDesktopLocalI2vResultSmokeTests.RunAsync().ConfigureAwait(false);
+                await LtxDesktopLocalI2vResultSmokeTests.RunAsync().ConfigureAwait(false);
+                return 0;
+            }
+
             if (args.Contains("--goal-production-autopilot-only", StringComparer.Ordinal))
             {
                 await GoalProductionAutopilotCoordinatorSmokeTests.RunAsync().ConfigureAwait(false);
@@ -204,6 +214,7 @@ internal static class Program
             await GoalVideoReturnClientSmokeTests.RunAsync().ConfigureAwait(false);
             await GoalVideoContinuationViewModelSmokeTests.RunAsync().ConfigureAwait(false);
             await ComfyProductionClientSmokeTests.RunAsync().ConfigureAwait(false);
+            await LtxDesktopLocalI2vPreflightSmokeTests.RunAsync().ConfigureAwait(false);
             await DeepAiClientSmokeTests.RunAsync().ConfigureAwait(false);
             await QualityEvaluationClientSmokeTests.RunAsync().ConfigureAwait(false);
             await QualityShadowClientSmokeTests.RunAsync().ConfigureAwait(false);

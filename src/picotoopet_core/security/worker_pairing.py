@@ -186,6 +186,7 @@ class PairedWorkerTrust:
         plan_digest: str,
         *,
         connection: sqlite3.Connection | None = None,
+        plan_schema_version: str = "1.1",
     ) -> str:
         """Mint an unguessable *non-authorizing* challenge scoped to a paired key.
 
@@ -217,7 +218,13 @@ class PairedWorkerTrust:
                 raw_plan = json.loads(job["plan_json"])
             except (ValueError, TypeError) as error:
                 raise ValueError("PRODUCTION_V11_CHALLENGE_SCOPE_INVALID") from error
-            if not isinstance(raw_plan, dict) or raw_plan.get("schema_version") != "1.1":
+            # 01. The default remains Wan v1.1. Only the dedicated LTX
+            #     service explicitly requests v1.2; no HTTP-supplied selector.
+            if (plan_schema_version not in ("1.1", "1.2")
+                or not isinstance(raw_plan, dict)
+                or raw_plan.get("schema_version") != plan_schema_version
+                or (plan_schema_version == "1.2" and raw_plan.get("production_profile")
+                    != "production.ltx.desktop.local.v1")):
                 raise ValueError("PRODUCTION_V11_CHALLENGE_SCOPE_INVALID")
             canonical = json.dumps(
                 raw_plan, sort_keys=True, separators=(",", ":"), ensure_ascii=False

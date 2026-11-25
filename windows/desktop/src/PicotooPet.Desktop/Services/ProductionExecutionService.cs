@@ -216,7 +216,9 @@ public sealed class ProductionExecutionService : IProductionJobExecutor, IAsyncD
             throw new ProductionWorkerException("P0_THREE_SHOT_ACCEPTANCE_HELD");
         using var gpu = _journal.AcquireGpu();
         // A process death releases the lock, not the submission uncertainty of a prior GPU job.
-        if (_journal.Pending().Any(p => p.JobId != productionJobId))
+        // Never pass a tagged LTX submission into the legacy Wan executor,
+        // even when the requested Core job happens to have the same ID.
+        if (_journal.Pending().Any(p => p.IsLtx || p.JobId != productionJobId))
             throw new ProductionWorkerException("MEDIA_PENDING_RECONCILIATION");
         var existing = await _session.GetProductionPackageAsync(productionJobId, cancellationToken).ConfigureAwait(false);
         if (existing is not null)

@@ -1,0 +1,51 @@
+name: P0-4 LTX Desktop Local REST Four-Second Preflight
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/p0-4-ltx-desktop-local-preflight.yml"
+      - "windows/desktop/src/PicotooPet.Desktop.Core/Production/LtxDesktopLocalI2vPreflightClient.cs"
+      - "windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/LtxDesktopLocalI2vPreflightSmokeTests.cs"
+      - "windows/desktop/src/PicotooPet.Desktop.Core/Production/LtxDesktopLocalI2vResultInspection.cs"
+      - "windows/desktop/src/PicotooPet.Desktop.Core/Production/LtxDesktopLocalI2vMediaExport.cs"
+      - "windows/desktop/src/PicotooPet.Desktop.Core/Production/LtxDesktopLocalI2vSubmission.cs"
+      - "windows/desktop/src/PicotooPet.Desktop.Core/PicotooPet.Desktop.Core.csproj"
+      - "windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/LtxDesktopLocalI2vResultSmokeTests.cs"
+      - "windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests/Program.cs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-local-ltx-contract:
+    name: Native Windows no-GPU local LTX REST contract
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up pinned .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: windows/desktop/global.json
+
+      - name: Compile real Core library with warnings as errors
+        shell: pwsh
+        run: |
+          # 01. Compiles the actual Windows production Core assembly.
+          #     Never contacts a local LTX instance or a GPU provider.
+          dotnet build windows/desktop/src/PicotooPet.Desktop.Core/PicotooPet.Desktop.Core.csproj -c Release --nologo -warnaserror
+          if ($LASTEXITCODE -ne 0) { throw 'P0_LTX_READONLY_COMPILE_FAILED' }
+
+      - name: Prove LTX local-only settings, 4-second spec and no POST
+        shell: pwsh
+        run: |
+          # 02. Synthetic local GET fixture, cloud/queue/duplicate/geometry
+          #     negatives; no real LTX, no Owner approval or GPU.
+          dotnet run --project windows/desktop/tests/PicotooPet.Desktop.Core.SmokeTests -c Release -- --ltx-local-only
+          if ($LASTEXITCODE -ne 0) { throw 'P0_LTX_READONLY_CONTRACT_FAILED' }
+          Write-Host 'P0_LTX_4S_LOCAL_PREFLIGHT=PASS; GPU_POST=0; PRODUCTION_HOLD=UNCHANGED'

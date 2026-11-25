@@ -275,6 +275,7 @@ def test_authenticated_route_post_get_revoke_and_pending_not_approved(state):
         assert data.status_code == 201, data.text
         obj = data.json()
         assert obj["status"] == "Pending"
+        assert "rights_scope" not in obj  # Frozen legacy Wan HTTP receipt.
         assert len(obj["references"]) == 2
         again = client.post("/api/v1/production/references/batches",
                             json=payload(digest), headers={"Idempotency-Key": "http-test-key"})
@@ -525,3 +526,307 @@ def test_v10_plan_parser_keeps_legacy_json_and_rejects_unknown_versions(state):
     assert parsed.model_dump(mode="json") == raw
     with pytest.raises(ValueError, match="PRODUCTION_PLAN_SCHEMA_UNSUPPORTED"):
         parse_versioned_plan(dict(raw, schema_version="1.2"))
+
+
+def test_ltx_reference_scope_is_explicit_and_never_authorizes_wan(state):
+    # 01. Reuse the exact existing HTTP registration and approval lifecycle.
+    #     The fixture is a synthetic frozen package; no GPU or user media.
+    db, service, approval, store, digest = state
+    data = payload(digest)
+    ltx = "ltx.desktop.local.i2v.production.v1"
+    for item in data["selected_references"]:
+        item["rights_scope"] = ltx
+    app = FastAPI()
+    install_error_handlers(app)
+    app.include_router(reference_registration.router, prefix="/api/v1")
+    app.state.services = SimpleNamespace(database=db, approvals=approval, creative_store=store)
+    app.dependency_overrides[require_auth] = lambda: None
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/production/references/batches", json=data,
+            headers={"Idempotency-Key": "ltx-reference-only"},
+        )
+        assert response.status_code == 201, response.text
+        receipt = response.json()
+        assert receipt["rights_scope"] == ltx
+        assert receipt["status"] == "Pending"
+        assert ltx in approval.get(receipt["approval_id"]).scope_summary
+        row = db.fetchone("SELECT * FROM approvals WHERE approval_id=?", (receipt["approval_id"],))
+        assert json.loads(row["scope_json"])["rights_scope"] == ltx
+
+        # 02. A replay is exact; a changed engine with the same key is rejected.
+        replay = client.post(
+            "/api/v1/production/references/batches", json=data,
+            headers={"Idempotency-Key": "ltx-reference-only"},
+        )
+        assert replay.status_code == 201 and replay.json() == receipt
+        wrong = client.post(
+            "/api/v1/production/references/batches", json=payload(digest),
+            headers={"Idempotency-Key": "ltx-reference-only"},
+        )
+        assert wrong.status_code == 409
+        mixed = payload(digest)
+        mixed["selected_references"][0]["rights_scope"] = ltx
+        rejected = client.post(
+            "/api/v1/production/references/batches", json=mixed,
+            headers={"Idempotency-Key": "mixed-reference-only"},
+        )
+        assert rejected.status_code == 422
+        assert len(db.fetchall("SELECT * FROM approvals", ())) == 1
+
+        # 03. Even a real Owner decision cannot be laundered into old Wan
+        #     authority. LTX-specific plan/lease admission is not enabled.
+        approval.decide_for_control_center(
+            approval_id=receipt["approval_id"], decision="approve",
+            request_digest=receipt["approval_request_digest"],
+            idempotency_key="ltx-synthetic-owner-decision",
+            resolved_by="synthetic-fixture", reason="fixture LTX only",
+        )
+        approved = service.get(receipt["approval_id"])
+        assert approved.status == "Approved"
+        assert approved.rights_scope == ltx
+        # Both verifier entry points enforce their own renderer purpose.
+        from picotoopet_core.production.reference_assets import (
+            LtxReferenceAssetIdentityV1, verify_persisted_ltx_reference_approval,
+        )
+        ltx_ref = LtxReferenceAssetIdentityV1.model_validate(
+            {**identity(approved, "shot-a").model_dump(), "rights_scope": ltx}
+        )
+        verify_persisted_ltx_reference_approval(db, ltx_ref)
+        with pytest.raises(ValueError, match="REFERENCE_ASSET_APPROVAL_SCOPE_MISMATCH"):
+            approved_reference_descriptor(db, ltx_ref)
+        with pytest.raises(ValueError, match="REFERENCE_ASSET_APPROVAL_SCOPE_MISMATCH"):
+            verify_persisted_ltx_reference_approval(db, identity(approved, "shot-a"))
+        with pytest.raises(ValueError, match="REFERENCE_ASSET_APPROVAL_SCOPE_MISMATCH"):
+            approved_reference_descriptor(db, identity(approved, "shot-a"))
+        assert len(db.fetchall("SELECT * FROM production_jobs", ())) == 0
+        assert len(db.fetchall("SELECT * FROM production_attempts", ())) == 0
+
+        # 04. Revocation uses the same immutable scoped request digest.
+        revoked = client.post(
+            f'/api/v1/production/references/batches/{receipt["approval_id"]}/revoke',
+            json={"request_digest": receipt["approval_request_digest"],
+                  "reason": "synthetic revoke"},
+        )
+        assert revoked.status_code == 200
+        assert revoked.json()["status"] == "Revoked"
+        assert revoked.json()["rights_scope"] == ltx
+        with pytest.raises(ValueError, match="REFERENCE_ASSET_APPROVAL_NOT_VERIFIED"):
+            verify_persisted_ltx_reference_approval(db, ltx_ref)
+
+
+def test_ltx_pilot_compiles_exact_frozen_first_frame_without_admission(state):
+    # 01. Use the existing synthetic fixture, replacing ONLY its fixture
+    #     package with a legitimate portrait four-second source before approval.
+    from picotoopet_core.creative.repository import CreativeRepository
+    from picotoopet_core.production.ltx_plan import (
+        compile_ltx_pilot_plan, LTX_SCOPE, LtxPilotFreezeRequestV12,
+        freeze_ltx_pilot_job, load_frozen_ltx_pilot_plan,
+    )
+    from picotoopet_core.production.repository import ProductionRepository
+    from picotoopet_core.production.service import ProductionService
+    from picotoopet_core.production.store import ProductionArtifactStore
+    from picotoopet_core.production.versioned_plan import parse_versioned_plan
+
+    db, registration, approval, store, _ = state
+    row = db.fetchone("SELECT * FROM creative_packages WHERE creative_package_id=?", (PACKAGE,))
+    manifest = json.loads(row["manifest_json"])
+    old = store.resolve_managed_relative(row["package_relpath"])
+    old.unlink()  # Synthetic test fixture only; production never rewrites a package.
+    stages = manifest["stage_results"]
+    stages["creative_brief.v1"]["output_profile_id"] = "video.vertical.v1"
+    stages["script.v1"]["target_duration_seconds"] = 12
+    for beat in stages["script.v1"]["beats"]:
+        beat["duration_seconds"] = 4
+    for shot in stages["shot_plan.v1"]["shots"]:
+        shot["duration_seconds"] = 4
+    location, digest = store.write_creative_package(PACKAGE, manifest)
+    db.execute(
+        "UPDATE creative_packages SET package_digest=?,package_relpath=?,manifest_json=? "
+        "WHERE creative_package_id=?", (digest, location, json.dumps(manifest), PACKAGE),
+    )
+
+    # 02. Create a scoped Pending request and require actual approval.
+    raw = payload(digest)
+    raw["selected_references"] = [
+        dict(candidate("shot-a"), rights_scope=LTX_SCOPE),
+    ]
+    receipt = registration.register(
+        ReferenceBatchRequestV1.model_validate(raw), idempotency_key="ltx-pilot",
+    )
+    service = ProductionService(
+        repository=ProductionRepository(db), creative_repository=CreativeRepository(db),
+        store=ProductionArtifactStore(store.paths),
+    )
+    job = str(uuid4())
+
+    def compile_plan():
+        return compile_ltx_pilot_plan(
+            service, production_job_id=job, creative_package_id=PACKAGE,
+            approved_reference_id=receipt.approval_id,
+        )
+
+    with pytest.raises(ValueError, match="REFERENCE_ASSET_APPROVAL_NOT_VERIFIED"):
+        compile_plan()
+    approval.decide_for_control_center(
+        approval_id=receipt.approval_id, decision="approve",
+        request_digest=receipt.approval_request_digest,
+        idempotency_key="ltx-pilot-owner", resolved_by="synthetic-fixture",
+        reason="fixture first-frame consent",
+    )
+    plan = compile_plan()
+    assert plan == compile_plan()
+    assert plan.digest() == compile_plan().digest()
+    assert plan.schema_version == "1.2"
+    assert plan.shot_id == "shot-a"
+    assert plan.reference_asset.sha256 == SHA
+    assert plan.reference_asset.rights_scope == LTX_SCOPE
+    assert plan.source_output_profile == "video.vertical.v1"
+    assert (plan.model, plan.resolution, plan.aspect_ratio, plan.duration_seconds, plan.fps) == (
+        "ltx-2.5-fast", "720p", "9:16", 4, 24,
+    )
+    # 03. Never admit the new contract through the legacy executable parser.
+    with pytest.raises(ValueError, match="PRODUCTION_PLAN_SCHEMA_UNSUPPORTED"):
+        parse_versioned_plan(plan.model_dump(mode="json"))
+    assert not db.fetchall("SELECT * FROM production_jobs", ())
+    assert not db.fetchall("SELECT * FROM production_attempts", ())
+
+    # 04. Persist a real held job in the existing database, atomically.
+    #     Its v1.2 digest is immutable and the old worker cannot claim it.
+    request = LtxPilotFreezeRequestV12(
+        creative_package_id=PACKAGE, approved_reference_id=receipt.approval_id,
+        idempotency_key="ltx-pilot-freeze",
+    )
+    # The real authenticated production router now exposes the freeze.
+    # Dependency override is synthetic CI only, not a production auth bypass.
+    from picotoopet_core.api.routes import production
+    from picotoopet_core.production.models import ProductionJobRecord
+    app = FastAPI()
+    install_error_handlers(app)
+    app.include_router(production.router, prefix="/api/v1")
+    app.state.services = SimpleNamespace(production=service)
+    app.dependency_overrides[require_auth] = lambda: None
+    with TestClient(app) as client:
+        response = client.post("/api/v1/production/jobs/v1.2/freeze",
+                               json=request.model_dump(mode="json"))
+        assert response.status_code == 200, response.text
+        frozen_job = ProductionJobRecord.model_validate(response.json())
+        job_path = f"/api/v1/production/jobs/{frozen_job.production_job_id}"
+        assert client.post("/api/v1/production/jobs/v1.2/freeze",
+                           json=request.model_dump(mode="json")).json() == response.json()
+        assert client.get(job_path).json() == response.json()
+        assert client.get("/api/v1/production/jobs").json() == [response.json()]
+        assert client.get(job_path + "/ltx-plan").status_code == 200
+        # Legacy plan and claim endpoint must fail closed with no lease.
+        assert client.get(job_path + "/plan").status_code == 409
+        assert client.post(job_path + "/claim",
+                           json={"executor_id": "windows-legacy"}).status_code == 409
+    assert frozen_job.status.value == "NeedsHuman"
+    assert frozen_job.production_profile.value == "production.ltx.desktop.local.v1"
+    frozen = load_frozen_ltx_pilot_plan(service, frozen_job.production_job_id)
+    assert frozen.digest() == frozen_job.plan_digest
+    with TestClient(app) as client:
+        assert client.get(job_path + "/ltx-plan").json() == frozen.model_dump(mode="json")
+    assert freeze_ltx_pilot_job(service, request) == frozen_job
+    assert len(db.fetchall("SELECT * FROM production_jobs", ())) == 1
+    assert not db.fetchall("SELECT * FROM production_tasks", ())
+    assert not db.fetchall("SELECT * FROM production_attempts", ())
+    with pytest.raises(ValueError, match="PRODUCTION_PLAN_SCHEMA_UNSUPPORTED"):
+        service.repository.claim_job(frozen_job.production_job_id, "legacy-worker")
+    assert service.repository.get_job(frozen_job.production_job_id) == frozen_job
+    assert not db.fetchall(
+        "SELECT * FROM production_jobs WHERE lease_token_digest IS NOT NULL", ()
+    )
+    with pytest.raises(ValueError, match="LTX_PLAN_IDEMPOTENCY_CONFLICT"):
+        freeze_ltx_pilot_job(service, request.model_copy(
+            update={"creative_package_id": str(uuid4())},
+        ))
+
+    # 05. Revoked consent cannot produce another plan or replay as authority.
+    registration.revoke(
+        receipt.approval_id, request_digest=receipt.approval_request_digest,
+        reason="synthetic revoke",
+    )
+    with pytest.raises(ValueError, match="REFERENCE_ASSET_APPROVAL_NOT_VERIFIED"):
+        compile_plan()
+    with pytest.raises(ValueError, match="REFERENCE_ASSET_APPROVAL_NOT_VERIFIED"):
+        freeze_ltx_pilot_job(service, request)
+    with pytest.raises(ValueError, match="REFERENCE_ASSET_APPROVAL_NOT_VERIFIED"):
+        freeze_ltx_pilot_job(service, request.model_copy(
+            update={"idempotency_key": "ltx-after-revoke"},
+        ))
+    assert len(db.fetchall("SELECT * FROM production_jobs", ())) == 1
+    assert not db.fetchall("SELECT * FROM production_attempts", ())
+    # 06. Audit reads may retain historical bytes after revoke, but never
+    #     accept a corrupted digest or transform that history into a lease.
+    assert load_frozen_ltx_pilot_plan(service, frozen_job.production_job_id) == frozen
+    with TestClient(app) as client:
+        assert client.post("/api/v1/production/jobs/v1.2/freeze",
+                           json=request.model_dump(mode="json")).status_code == 409
+        assert client.get(job_path + "/ltx-plan").json() == frozen.model_dump(mode="json")
+    db.execute("UPDATE production_jobs SET plan_digest=? WHERE production_job_id=?",
+               ("0" * 64, frozen_job.production_job_id))
+    with pytest.raises(ValueError, match="LTX_PLAN_PERSISTED_IDENTITY_MISMATCH"):
+        load_frozen_ltx_pilot_plan(service, frozen_job.production_job_id)
+
+
+def test_ltx_full_consent_freezes_three_independent_existing_worker_jobs(state):
+    # 01. Use real Core storage, registration and approval; no inference or
+    #     additional task scheduler. Each held job binds exactly its own shot.
+    from picotoopet_core.production.ltx_plan import (
+        LTX_SCOPE, LtxPilotFreezeRequestV12, freeze_ltx_pilot_job,
+        load_frozen_ltx_pilot_plan,
+    )
+    db, registration, approval, store, _ = state
+    row = db.fetchone("SELECT * FROM creative_packages WHERE creative_package_id=?", (PACKAGE,))
+    manifest = json.loads(row["manifest_json"])
+    store.resolve_managed_relative(row["package_relpath"]).unlink()
+    stages = manifest["stage_results"]
+    stages["creative_brief.v1"]["output_profile_id"] = "video.vertical.v1"
+    stages["script.v1"]["target_duration_seconds"] = 12
+    for beat in stages["script.v1"]["beats"]:
+        beat["duration_seconds"] = 4
+    for shot in stages["shot_plan.v1"]["shots"]:
+        shot["duration_seconds"] = 4
+        shot["render_intent"] = "IMAGE_TO_VIDEO"
+    location, digest = store.write_creative_package(PACKAGE, manifest)
+    db.execute("UPDATE creative_packages SET package_digest=?,package_relpath=?,manifest_json=? "
+               "WHERE creative_package_id=?", (digest, location, json.dumps(manifest), PACKAGE))
+    raw = payload(digest)
+    raw["selected_references"] = [
+        dict(candidate(shot), rights_scope=LTX_SCOPE, sha256=char*64,
+             input_relative_path=f"PicotooPet/references/{char*64}/{shot}.png")
+        for shot, char in zip(("shot-a", "shot-b", "shot-t"), "abc", strict=True)
+    ]
+    receipt = registration.register(ReferenceBatchRequestV1.model_validate(raw),
+                                    idempotency_key="ltx-three-shot-consent")
+    approval.decide_for_control_center(
+        approval_id=receipt.approval_id, decision="approve",
+        request_digest=receipt.approval_request_digest, idempotency_key="ltx-three-owner",
+        resolved_by="synthetic-fixture", reason="fixture only",
+    )
+    service = _v11_service(state)
+    requests = [LtxPilotFreezeRequestV12(creative_package_id=PACKAGE,
+                approved_reference_id=receipt.approval_id, idempotency_key="ltx-shot-" + shot,
+                selected_shot_id=shot) for shot in ("shot-a", "shot-b", "shot-t")]
+    jobs = [freeze_ltx_pilot_job(service, request) for request in requests]
+    plans = [load_frozen_ltx_pilot_plan(service, job.production_job_id) for job in jobs]
+    assert [plan.shot_id for plan in plans] == ["shot-a", "shot-b", "shot-t"]
+    assert [plan.reference_asset.sha256 for plan in plans] == [char*64 for char in "abc"]
+    assert len({plan.production_task_id for plan in plans}) == 3
+    assert all(job.status.value == "NeedsHuman" for job in jobs)
+    assert [freeze_ltx_pilot_job(service, request) for request in requests] == jobs
+    # 02. No accidental whole-batch legacy freeze or changed selection replay.
+    with pytest.raises(ValueError, match="LTX_PLAN_FIRST_SHOT_ONLY"):
+        freeze_ltx_pilot_job(service, requests[0].model_copy(update={"selected_shot_id": None}))
+    with pytest.raises(ValueError, match="LTX_PLAN_IDEMPOTENCY_CONFLICT"):
+        freeze_ltx_pilot_job(service, requests[0].model_copy(update={"selected_shot_id": "shot-b"}))
+    with pytest.raises(ValueError, match="LTX_PLAN_FULL_SHOT_CONSENT_REQUIRED"):
+        freeze_ltx_pilot_job(service, requests[0].model_copy(update={"selected_shot_id": "unrelated"}))
+    assert len(db.fetchall("SELECT * FROM production_jobs")) == 3
+    assert not db.fetchall("SELECT * FROM production_attempts")
+    assert not db.fetchall("SELECT * FROM production_tasks")
+    registration.revoke(receipt.approval_id, request_digest=receipt.approval_request_digest,
+                        reason="synthetic revoke")
+    with pytest.raises(ValueError, match="REFERENCE_ASSET_APPROVAL_NOT_VERIFIED"):
+        freeze_ltx_pilot_job(service, requests[1])

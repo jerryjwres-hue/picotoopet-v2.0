@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Org.BouncyCastle.Math.EC.Rfc8032;
 using PicotooPet.Desktop.Core.Production;
+using PicotooPet.Desktop.Core.Contracts;
 using PicotooPet.Desktop.Services.ProductionReference;
 
 namespace PicotooPet.MediaWorker.SmokeTests;
@@ -30,6 +31,30 @@ internal static class WorkerSignerTests
                 Ed25519.Sign(seed, 0, bytes, 0, bytes.Length, sig, 0);
                 Assert(Convert.ToHexString(sig).Equals(witness.GetProperty("signature").GetString(), StringComparison.OrdinalIgnoreCase), "Core exact Ed25519 signature");
                 Assert(Ed25519.Verify(sig, 0, pub, 0, bytes, 0, bytes.Length), "valid signature");
+                // 01. Reuse the Core-generated canonical fixtures, changing
+                //     only the two protocol literals defined by LTX Core.
+                var ltx = JsonNode.Parse(witness.GetRawText())!;
+                ltx["schema_version"] = "production.ltx.worker_witness.v1";
+                var ltxWitness = JsonSerializer.SerializeToElement(ltx);
+                var ltxBytes = WorkerWitnessEncoding.LtxPayload(ltxWitness);
+                var expectedLtx = System.Text.Encoding.UTF8.GetBytes(
+                    System.Text.Encoding.UTF8.GetString(bytes)
+                        .Replace("picotoopet.production.worker_witness.v1\n", "picotoopet.production.ltx.worker_witness.v1\n", StringComparison.Ordinal)
+                        .Replace("\"schema_version\":\"production.worker_witness.v1\"", "\"schema_version\":\"production.ltx.worker_witness.v1\"", StringComparison.Ordinal));
+                Assert(ltxBytes.AsSpan().SequenceEqual(expectedLtx), "LTX canonical domain and schema");
+                Assert(!Ed25519.Verify(sig, 0, pub, 0, ltxBytes, 0, ltxBytes.Length), "Wan signature denied for LTX");
+                var ltxSig = new byte[64];
+                Ed25519.Sign(seed, 0, ltxBytes, 0, ltxBytes.Length, ltxSig, 0);
+                Assert(Ed25519.Verify(ltxSig, 0, pub, 0, ltxBytes, 0, ltxBytes.Length), "LTX domain signature");
+                Assert(!Ed25519.Verify(ltxSig, 0, pub, 0, bytes, 0, bytes.Length), "LTX signature denied for Wan");
+                Throws(() => WorkerWitnessEncoding.Payload(ltxWitness));
+                Throws(() => WorkerWitnessEncoding.LtxPayload(witness));
+                var refs = ltx["references"]!.AsArray();
+                var extra = refs[0]!.DeepClone();
+                extra["production_task_id"] = "other-task";
+                extra["shot_id"] = "other-shot";
+                refs.Add(extra);
+                Throws(() => WorkerWitnessEncoding.LtxPayload(JsonSerializer.SerializeToElement(ltx)));
                 bytes[^1] ^= 1;
                 Assert(!Ed25519.Verify(sig, 0, pub, 0, bytes, 0, bytes.Length), "tamper rejected");
                 Throws(() => WorkerWitnessEncoding.RequireFresh(witness, DateTimeOffset.Parse("2026-10-29T12:01:00Z", System.Globalization.CultureInfo.InvariantCulture)));
@@ -128,6 +153,8 @@ internal static class WorkerSignerTests
         File.Delete(blob);
         Throws(() => ProtectedWorkerSigningKey.Open(root, executor, fingerprint));
         Throws(() => ProtectedWorkerSigningKey.Create(root, executor));
+        LtxDispatchPlan();
+        await LtxMeasuredAsync();
         Console.WriteLine("P0_WORKER_DPAPI_RESTART_TAMPER_REPLAY=PASS; GPU_POSTS=0; I2V=BLOCKED");
     }
 
@@ -183,6 +210,101 @@ internal static class WorkerSignerTests
         try { await process.WaitForExitAsync(timeout.Token); }
         catch { process.Kill(entireProcessTree: true); throw; }
         Assert(process.ExitCode == 0, "restart child: " + await output + await errors);
+    }
+
+    // 01. Real Windows snapshot + existing protected key; fixture-only
+    //     consent. The separate Core HTTP test exercises actual approval.
+    // 01. Real dispatch selector and frozen plan validation. Synthetic IDs
+    //     exercise both renderer separation and digest binding without GPU.
+    private static void LtxDispatchPlan()
+    {
+        using var fixture = new DurableReferenceSnapshotTests.Fixture();
+        var jobId = Guid.NewGuid().ToString("D");
+        var taskId = Guid.NewGuid().ToString("D");
+        var reference = fixture.Reference with { ProductionJobId = jobId,
+            ProductionTaskId = taskId, RightsScope = "ltx.desktop.local.i2v.production.v1" };
+        var plan = JsonSerializer.SerializeToNode(new
+        {
+            schema_version = "1.2", production_profile = "production.ltx.desktop.local.v1",
+            workflow_id = "ltx.desktop.local.i2v.v1", production_job_id = jobId,
+            creative_package_id = reference.CreativePackageId,
+            creative_package_digest = reference.CreativePackageDigest, project_key = "goal-goal",
+            source_output_profile = "video.vertical.v1", shot_id = reference.ShotId,
+            production_task_id = taskId, prompt = "synthetic test", seed = 73,
+            model = "ltx-2.5-fast", resolution = "720p", aspect_ratio = "9:16",
+            duration_seconds = 4, fps = 24, reference_asset = reference,
+        })!;
+        var now = DateTimeOffset.UtcNow;
+        var job = new ProductionJobRecord(jobId, reference.CreativePackageId,
+            reference.CreativePackageDigest, "goal-goal", "production.ltx.desktop.local.v1",
+            Hash(CanonicalJson.Serialize(plan)), "NeedsHuman", null, null,
+            "LTX_SIGNED_WORKER_NOT_ENABLED", null, "fixture", now, now, now);
+        Assert(LtxProductionExecutor.IsSelected(job), "explicit frozen LTX candidate recognized");
+        Assert(LtxProductionExecutor.ValidatePlan(job, JsonSerializer.SerializeToElement(plan)) == reference,
+            "exact frozen LTX reference identity");
+        Assert(!LtxProductionExecutor.IsSelected(job with { ProductionProfile = "production.comfyui.v1" }),
+            "Wan must never enter LTX executor");
+        Assert(!LtxProductionExecutor.IsSelected(job with { FailureCode = "LTX_PILOT_REVIEW_REQUIRED" }),
+            "completed candidate must never be dispatched again");
+        plan["seed"] = 74;
+        Throws(() => LtxProductionExecutor.ValidatePlan(job, JsonSerializer.SerializeToElement(plan)));
+        Console.WriteLine("P0_LTX_DISPATCH_PLAN_SCOPE=PASS; GPU_POSTS=0");
+    }
+
+    private static async Task LtxMeasuredAsync()
+    {
+        using var f = new DurableReferenceSnapshotTests.Fixture();
+        const string executor = "windows-same-exe-worker";
+        var root = Path.Combine(f.Root, "ltx-signing-key");
+        var id = ProtectedWorkerSigningKey.Create(root, executor);
+        var key = ProtectedWorkerSigningKey.Open(root, executor, id.Fingerprint);
+        var reference = f.Reference with { RightsScope = "ltx.desktop.local.i2v.production.v1" };
+        var digest = Hash("ltx-frozen-fixture"u8.ToArray());
+        var intent = Hash("ltx-intent-fixture"u8.ToArray());
+        using var gpu = f.Journal.AcquireGpu();
+        using var snapshot = await f.Store().PrepareLtxAsync(reference, digest, intent,
+            new LtxFixtureConsent(f), f.Journal, gpu, CancellationToken.None);
+        Assert(File.ReadAllBytes(f.Full(snapshot.RelativePath)).SequenceEqual(f.Bytes), "exact LTX snapshot bytes");
+        var now = DateTimeOffset.UtcNow;
+        var draft = JsonNode.Parse((await MeasuredAsync(f, snapshot, id, now)).GetRawText())!;
+        draft["schema_version"] = "production.ltx.worker_witness.v1";
+        Task<string> Sign() => key.SignLtxMeasuredUnderLockAsync(JsonSerializer.SerializeToElement(draft),
+            reference, digest, intent, snapshot, f.Journal, gpu, now, CancellationToken.None);
+        f.Approved = false;
+        await DeniedAsync(Sign);
+        f.Approved = true;
+        draft["references"]!.AsArray()[0]!["graph_digest"] = new string('f', 64);
+        await DeniedAsync(Sign);
+        draft["references"]!.AsArray()[0]!["graph_digest"] = intent;
+        Assert(!Directory.EnumerateFiles(root, "used-*").Any(), "failed LTX scope does not reserve nonce");
+        var signature = await Sign();
+        var payload = WorkerWitnessEncoding.LtxPayload(JsonSerializer.SerializeToElement(draft));
+        Assert(Ed25519.Verify(Convert.FromHexString(signature), 0, Convert.FromHexString(id.PublicKeyHex),
+            0, payload, 0, payload.Length), "actual DPAPI LTX signature");
+        await DeniedAsync(Sign);
+        Assert(f.Journal.Pending().Count == 0, "LTX measurement never submits media");
+        // 02. Claim ambiguity is a durable reservation, not a vendor ID.
+        var marker = new ProductionSubmission(reference.ProductionJobId, reference.ProductionTaskId,
+            digest, intent, "Claiming", null, Renderer: ProductionSubmission.LtxRenderer);
+        f.Journal.Save(marker);
+        Assert(f.Journal.Pending().Single() == marker, "uncertain LTX claim stays pending");
+        Throws(() => f.Journal.Save(marker with { Renderer = null }));
+        Throws(() => f.Journal.Save(marker with { PromptId = Guid.NewGuid().ToString("D") }));
+        f.Journal.Save(marker with { Phase = "Claimed" });
+        Assert(f.Journal.Read(marker.JobId, marker.TaskId)?.Phase == "Claimed", "LTX reservation persists");
+        await DeniedAsync(Sign);
+        Console.WriteLine("P0_LTX_DPAPI_MEASURED_SIGNATURE=PASS; GPU_POSTS=0");
+    }
+
+    private sealed class LtxFixtureConsent(DurableReferenceSnapshotTests.Fixture fixture) : ITrustedReferenceApprovalSource
+    {
+        public Task<bool> IsApprovedAsync(TrustedReferenceDescriptor descriptor, CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            var r = fixture.Reference;
+            return Task.FromResult(fixture.Approved && descriptor == new TrustedReferenceDescriptor(
+                r.ApprovalId, r.ShotId, r.AssetId, r.InputRelativePath, r.Sha256, r.Bytes));
+        }
     }
 
     private static async Task<JsonElement> MeasuredAsync(DurableReferenceSnapshotTests.Fixture f, DurableReferenceSnapshot lease, WorkerPublicIdentity id, DateTimeOffset now)

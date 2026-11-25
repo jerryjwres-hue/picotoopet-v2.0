@@ -192,13 +192,284 @@ internal sealed class CoreWorkerChallengeClient : IDisposable
         finally { for (var i = pins.Count - 1; i >= 0; i--) pins[i].Dispose(); }
     }
 
+    // 01. Explicit LTX reservation, deliberately not invoked by the shipping
+    //     dispatch loop until renderer settlement and recovery are connected.
+    internal sealed record LtxClaim(string JobId, string TaskId, string AttemptId,
+        string ExecutorId, string LeaseToken, DateTimeOffset ExpiresAt,
+        string PlanDigest, string IntentDigest, JsonElement Plan)
+    {
+        public override string ToString() => "LTX claim (credentials redacted)";
+    }
+
+    internal async Task<LtxClaim> ClaimLtxPreparedAsync(ProductionReferenceAssetV11Record reference,
+        string planDigest, string vendorIntentDigest, string keyRoot, string executorId,
+        string expectedFingerprint, DurableReferenceSnapshot snapshot,
+        ProductionSubmissionJournal journal, ProductionSubmissionJournal.GpuLease gpu, CancellationToken ct)
+    {
+        gpu.RequireOwnedBy(journal);
+        using var pin = snapshot.RetainForWitness();
+        if (!Guid.TryParseExact(reference.ProductionJobId, "D", out _)
+            || !Guid.TryParseExact(reference.ProductionTaskId, "D", out _)
+            || reference.RightsScope != "ltx.desktop.local.i2v.production.v1"
+            || !IsHash(planDigest) || !IsHash(vendorIntentDigest)
+            || snapshot.Measurement.PlanDigest != planDigest
+            || snapshot.Measurement.GraphDigest != vendorIntentDigest)
+            throw Invalid("LTX_CLAIM_SCOPE_INVALID");
+        if (journal.Pending().Count != 0 || journal.Read(reference.ProductionJobId, reference.ProductionTaskId) is not null)
+            throw Invalid("LTX_CLAIM_RECONCILIATION_REQUIRED");
+
+        // 02. Check exact live consent before creating the one-use challenge.
+        var authority = LtxReferenceApproval(reference, planDigest, vendorIntentDigest);
+        var descriptor = new TrustedReferenceDescriptor(reference.ApprovalId, reference.ShotId,
+            reference.AssetId, reference.InputRelativePath, reference.Sha256, reference.Bytes);
+        if (!await authority.IsApprovedAsync(descriptor, ct).ConfigureAwait(false))
+            throw Invalid("LTX_REFERENCE_APPROVAL_REQUIRED");
+        await snapshot.RecheckForWitnessAsync(ct).ConfigureAwait(false);
+        var key = ProtectedWorkerSigningKey.Open(keyRoot, executorId, expectedFingerprint);
+        using var executable = await MeasureProcessImageAsync(ct).ConfigureAwait(false);
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        budget.CancelAfter(TimeSpan.FromSeconds(30));
+        var token = budget.Token;
+        var route = "api/v1/production/jobs/" + Uri.EscapeDataString(reference.ProductionJobId);
+        using var challengeDocument = await PostAsync(route + "/ltx-worker-challenge",
+            new { worker_key_id = key.Identity.KeyId, executor_id = executorId, plan_digest = planDigest },
+            HttpStatusCode.OK, token).ConfigureAwait(false);
+        var challenge = challengeDocument.RootElement;
+        ValidateChallenge(challenge, key.Identity, executorId, reference.ProductionJobId, planDigest, true);
+        var witness = await BuildMeasuredWitnessAsync("production.ltx.worker_witness.v1",
+            reference.ProductionJobId, planDigest, executorId, key.Identity.KeyId, challenge,
+            [(reference, snapshot)], executable, token).ConfigureAwait(false);
+        witness["signature"] = await key.SignLtxMeasuredUnderLockAsync(JsonSerializer.SerializeToElement(witness),
+            reference, planDigest, vendorIntentDigest, snapshot, journal, gpu, DateTimeOffset.UtcNow, token)
+            .ConfigureAwait(false);
+        await snapshot.RecheckForWitnessAsync(token).ConfigureAwait(false);
+        await executable.RequireCurrentAsync(token).ConfigureAwait(false);
+        ValidateChallenge(challenge, key.Identity, executorId, reference.ProductionJobId, planDigest, true);
+        _requireCurrentSession();
+        gpu.RequireOwnedBy(journal);
+        if (journal.Pending().Count != 0 || journal.Read(reference.ProductionJobId, reference.ProductionTaskId) is not null)
+            throw Invalid("LTX_CLAIM_RECONCILIATION_REQUIRED");
+
+        // 03. Persist ambiguity BEFORE sending the claim. Never replay after
+        //     a lost response, or treat this as a vendor generation ID.
+        var marker = new ProductionSubmission(reference.ProductionJobId, reference.ProductionTaskId,
+            planDigest, vendorIntentDigest, "Claiming", null, Renderer: ProductionSubmission.LtxRenderer);
+        token.ThrowIfCancellationRequested();
+        journal.Save(marker);
+        using var response = await PostAsync(route + "/ltx-claim", witness, HttpStatusCode.OK, token)
+            .ConfigureAwait(false);
+        var claim = ReadLtxClaim(response.RootElement, reference, executorId, planDigest, vendorIntentDigest);
+        gpu.RequireOwnedBy(journal);
+        journal.Save(marker with { Phase = "Claimed" });
+        return claim;
+    }
+
+    internal static LtxClaim ReadLtxClaim(JsonElement body, ProductionReferenceAssetV11Record reference,
+        string executor, string planDigest, string intentDigest)
+    {
+        Shape(body, "schema_version production_job_id production_task_id production_attempt_id executor_id lease_token lease_expires_at plan_digest vendor_intent_digest plan");
+        var plan = body.GetProperty("plan");
+        var attempt = body.GetProperty("production_attempt_id").GetString();
+        var token = body.GetProperty("lease_token").GetString();
+        var expires = Utc(body.GetProperty("lease_expires_at"));
+        if (body.GetProperty("schema_version").GetString() != "production.ltx.claim.v1"
+            || body.GetProperty("production_job_id").GetString() != reference.ProductionJobId
+            || body.GetProperty("production_task_id").GetString() != reference.ProductionTaskId
+            || body.GetProperty("executor_id").GetString() != executor
+            || body.GetProperty("plan_digest").GetString() != planDigest
+            || body.GetProperty("vendor_intent_digest").GetString() != intentDigest
+            || !Guid.TryParseExact(attempt, "D", out _)
+            || string.IsNullOrWhiteSpace(token) || token.Length > 200 || expires <= DateTimeOffset.UtcNow
+            || Hash(CanonicalJson.Serialize(JsonNode.Parse(plan.GetRawText())!)) != planDigest
+            || plan.GetProperty("schema_version").GetString() != "1.2"
+            || plan.GetProperty("production_profile").GetString() != "production.ltx.desktop.local.v1"
+            || plan.GetProperty("production_job_id").GetString() != reference.ProductionJobId
+            || plan.GetProperty("production_task_id").GetString() != reference.ProductionTaskId
+            || plan.GetProperty("reference_asset").Deserialize<ProductionReferenceAssetV11Record>() != reference)
+            throw Invalid("LTX_CLAIM_RECEIPT_INVALID");
+        return new(reference.ProductionJobId, reference.ProductionTaskId, attempt!, executor,
+            token!, expires, planDigest, intentDigest, plan.Clone());
+    }
+
+    // 04. Bind only the vendor IDs already persisted by the existing LTX
+    //     submission transport. A lost Core response permits exact rebind,
+    //     never another upload or generation. No media success is asserted.
+    internal async Task BindLtxGenerationAsync(LtxClaim claim,
+        ProductionSubmissionJournal journal, ProductionSubmissionJournal.GpuLease gpu,
+        CancellationToken ct)
+    {
+        gpu.RequireOwnedBy(journal);
+        var marker = journal.Read(claim.JobId, claim.TaskId);
+        if (marker is null || !marker.IsLtx || marker.Phase != "Submitted"
+            || marker.PlanDigest != claim.PlanDigest || marker.GraphDigest != claim.IntentDigest
+            || !Guid.TryParseExact(marker.PromptId, "D", out var generation)
+            || !Guid.TryParseExact(marker.VendorStartFrameAssetId, "D", out var asset)
+            || generation == Guid.Empty || asset == Guid.Empty)
+            throw Invalid("LTX_VENDOR_BIND_JOURNAL_SCOPE_INVALID");
+        var route = "api/v1/production/jobs/" + Uri.EscapeDataString(claim.JobId) + "/ltx-vendor/bind";
+        using var result = await PostAsync(route, new { executor_id = claim.ExecutorId, lease_token = claim.LeaseToken,
+            production_attempt_id = claim.AttemptId, plan_digest = claim.PlanDigest,
+            vendor_intent_digest = claim.IntentDigest, generation_id = generation.ToString("D"),
+            start_frame_asset_id = asset.ToString("D") }, HttpStatusCode.OK, ct).ConfigureAwait(false);
+        var receipt = result.RootElement;
+        Shape(receipt, "schema_version production_job_id production_task_id production_attempt_id plan_digest vendor_intent_digest generation_id start_frame_asset_id");
+        if (receipt.GetProperty("schema_version").GetString() != "production.ltx.vendor_binding.v1"
+            || receipt.GetProperty("production_job_id").GetString() != claim.JobId
+            || receipt.GetProperty("production_task_id").GetString() != claim.TaskId
+            || receipt.GetProperty("production_attempt_id").GetString() != claim.AttemptId
+            || receipt.GetProperty("plan_digest").GetString() != claim.PlanDigest
+            || receipt.GetProperty("vendor_intent_digest").GetString() != claim.IntentDigest
+            || receipt.GetProperty("generation_id").GetString() != generation.ToString("D")
+            || receipt.GetProperty("start_frame_asset_id").GetString() != asset.ToString("D"))
+            throw Invalid("LTX_VENDOR_BIND_RECEIPT_INVALID");
+        gpu.RequireOwnedBy(journal);
+        // 05. Preserve Submitted until decoded media and Core settlement.
+    }
+
+    // 06. Collect the exact already-submitted local generation. This does not
+    //     submit or retry a render. The existing final QA process runner is reused.
+    //     Caller owns the shared GPU lock; no separate renderer or worker.
+    internal async Task<JsonElement> CollectCompletedLtxCandidateAsync(LtxClaim claim,
+        LtxDesktopLocalI2vPreflightClient vendor, string outputRoot,
+        ProductionSubmissionJournal journal, ProductionSubmissionJournal.GpuLease gpu,
+        CancellationToken ct)
+    {
+        gpu.RequireOwnedBy(journal);
+        var marker = journal.Read(claim.JobId, claim.TaskId);
+        if (marker is null || !marker.IsLtx || marker.Phase != "Submitted"
+            || marker.PlanDigest != claim.PlanDigest || marker.GraphDigest != claim.IntentDigest
+            || !Guid.TryParseExact(claim.JobId, "D", out _)
+            || !Guid.TryParseExact(claim.TaskId, "D", out _)
+            || !Guid.TryParseExact(marker.PromptId, "D", out _)
+            || !Guid.TryParseExact(marker.VendorStartFrameAssetId, "D", out _))
+            throw Invalid("LTX_COLLECT_JOURNAL_SCOPE_INVALID");
+        if (!MasterVideoPathPolicy.IsSafeLocalFullyQualified(outputRoot) || !Directory.Exists(outputRoot))
+            throw Invalid("LTX_COLLECT_ROOT_INVALID");
+        // 07. Retain the same local output root; never accept a vendor path.
+        for (DirectoryInfo? parent = new(outputRoot); parent is not null; parent = parent.Parent)
+            if ((parent.Attributes & FileAttributes.ReparsePoint) != 0)
+                throw Invalid("LTX_COLLECT_ROOT_INVALID");
+        var directory = Path.GetFullPath(outputRoot);
+        foreach (var part in new[] { "PicotooPet", "ltx", claim.JobId, claim.TaskId })
+        {
+            directory = Path.Combine(directory, part);
+            ProductionLocalEnvironment.AssertNoLinkEscape(outputRoot, directory);
+            Directory.CreateDirectory(directory);
+            ProductionLocalEnvironment.AssertNoLinkEscape(outputRoot, directory);
+        }
+        await CheckLtxLeaseAsync(claim, journal, gpu, true, ct).ConfigureAwait(false);
+        await BindLtxGenerationAsync(claim, journal, gpu, ct).ConfigureAwait(false);
+        var expected = new LtxDesktopGenerationExpectation(marker.PromptId!, marker.VendorStartFrameAssetId!,
+            claim.Plan.GetProperty("prompt").GetString() ?? throw Invalid("LTX_COLLECT_PLAN_INVALID"),
+            claim.Plan.GetProperty("seed").GetInt32());
+        var candidate = await vendor.ExportCompletedCandidateAsync(expected, directory, ct).ConfigureAwait(false);
+        var inspection = candidate.Inspection;
+        var fileName = expected.GenerationId + "-video-" + inspection.VideoAssetId + ".mp4";
+        if (!inspection.ResultIsLocal || inspection.Lane != "local" || !inspection.MediaBytesDownloaded
+            || inspection.GenerationId != expected.GenerationId || inspection.MediaType != "video/mp4"
+            || !Guid.TryParseExact(inspection.VideoAssetId, "D", out _)
+            || candidate.LocalFileName != fileName)
+            throw Invalid("LTX_COLLECT_MEDIA_UNVERIFIED");
+        var file = Path.Combine(directory, fileName);
+        ProductionLocalEnvironment.AssertNoLinkEscape(outputRoot, file);
+        // 08. Hold the downloaded bytes against writes across the real decode
+        //     AND Core settlement. An exported header alone is not a video pass.
+        await using var pin = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read);
+        var facts = await new FinalVideoQaMediaProbe(new FixedMasterVideoProcessRunner())
+            .VerifyLtxCandidateAsync(file, candidate.Sha256, candidate.Bytes, ct).ConfigureAwait(false);
+        await CheckLtxLeaseAsync(claim, journal, gpu, false, ct).ConfigureAwait(false);
+        var relative = "PicotooPet/ltx/" + claim.JobId + "/" + claim.TaskId + "/" + fileName;
+        var route = "api/v1/production/jobs/" + Uri.EscapeDataString(claim.JobId) + "/ltx-candidate/result";
+        using var response = await PostAsync(route, new
+        {
+            executor_id = claim.ExecutorId, lease_token = claim.LeaseToken,
+            production_attempt_id = claim.AttemptId, plan_digest = claim.PlanDigest,
+            vendor_intent_digest = claim.IntentDigest, generation_id = expected.GenerationId,
+            start_frame_asset_id = expected.StartFrameAssetId, video_asset_id = inspection.VideoAssetId,
+            output_relpath = relative, output_sha256 = candidate.Sha256, output_bytes = candidate.Bytes,
+            mime_type = "video/mp4", width = facts.Width, height = facts.Height,
+            frame_count = facts.FrameCount, fps = facts.Fps, duration_ms = facts.DurationMs,
+            lane = "local", decode_verified = true,
+        }, HttpStatusCode.OK, ct).ConfigureAwait(false);
+        var body = response.RootElement;
+        Shape(body, "schema_version production_job_id production_task_id production_attempt_id plan_digest vendor_intent_digest generation_id start_frame_asset_id video_asset_id output_relpath output_sha256 output_bytes mime_type width height frame_count fps duration_ms lane decode_verified job_status review_required mac_bytes_verified");
+        if (body.GetProperty("schema_version").GetString() != "production.ltx.candidate.v1"
+            || body.GetProperty("production_job_id").GetString() != claim.JobId
+            || body.GetProperty("production_task_id").GetString() != claim.TaskId
+            || body.GetProperty("production_attempt_id").GetString() != claim.AttemptId
+            || body.GetProperty("plan_digest").GetString() != claim.PlanDigest
+            || body.GetProperty("vendor_intent_digest").GetString() != claim.IntentDigest
+            || body.GetProperty("generation_id").GetString() != expected.GenerationId
+            || body.GetProperty("start_frame_asset_id").GetString() != expected.StartFrameAssetId
+            || body.GetProperty("video_asset_id").GetString() != inspection.VideoAssetId
+            || body.GetProperty("output_relpath").GetString() != relative
+            || body.GetProperty("output_sha256").GetString() != candidate.Sha256
+            || body.GetProperty("output_bytes").GetInt64() != candidate.Bytes
+            || body.GetProperty("mime_type").GetString() != "video/mp4"
+            || body.GetProperty("width").GetInt32() != facts.Width || body.GetProperty("height").GetInt32() != facts.Height
+            || body.GetProperty("frame_count").GetInt32() != facts.FrameCount || body.GetProperty("fps").GetInt32() != facts.Fps
+            || body.GetProperty("duration_ms").GetInt32() != facts.DurationMs
+            || body.GetProperty("lane").GetString() != "local" || !body.GetProperty("decode_verified").GetBoolean()
+            || body.GetProperty("job_status").GetString() != "NeedsHuman"
+            || !body.GetProperty("review_required").GetBoolean() || body.GetProperty("mac_bytes_verified").GetBoolean())
+            throw Invalid("LTX_COLLECT_RECEIPT_INVALID");
+        gpu.RequireOwnedBy(journal);
+        // 09. Only an exact durable Core receipt clears the pending marker.
+        //     Lost responses retain Submitted; never replace the output file.
+        journal.Save(marker with { Phase = "Settled" });
+        return body.Clone();
+    }
+
+    // 04. Existing paired transport, same reservation; no additional claim.
+    internal async Task<DateTimeOffset> CheckLtxLeaseAsync(LtxClaim claim,
+        ProductionSubmissionJournal journal, ProductionSubmissionJournal.GpuLease gpu,
+        bool renew, CancellationToken ct)
+    {
+        gpu.RequireOwnedBy(journal);
+        var marker = journal.Read(claim.JobId, claim.TaskId);
+        if (marker is null || !marker.IsLtx || marker.Phase is not ("Claimed" or "Submitting" or "Submitted")
+            || marker.PlanDigest != claim.PlanDigest || marker.GraphDigest != claim.IntentDigest)
+            throw Invalid("LTX_LEASE_JOURNAL_SCOPE_INVALID");
+        var route = "api/v1/production/jobs/" + Uri.EscapeDataString(claim.JobId)
+            + (renew ? "/ltx-lease/heartbeat" : "/ltx-lease/recheck");
+        using var result = await PostAsync(route, new { executor_id = claim.ExecutorId, lease_token = claim.LeaseToken,
+            production_attempt_id = claim.AttemptId, plan_digest = claim.PlanDigest,
+            vendor_intent_digest = claim.IntentDigest }, HttpStatusCode.OK, ct).ConfigureAwait(false);
+        var receipt = result.RootElement;
+        Shape(receipt, "schema_version production_job_id production_task_id production_attempt_id plan_digest vendor_intent_digest lease_expires_at");
+        var expires = Utc(receipt.GetProperty("lease_expires_at"));
+        if (receipt.GetProperty("schema_version").GetString() != "production.ltx.lease.v1"
+            || receipt.GetProperty("production_job_id").GetString() != claim.JobId
+            || receipt.GetProperty("production_task_id").GetString() != claim.TaskId
+            || receipt.GetProperty("production_attempt_id").GetString() != claim.AttemptId
+            || receipt.GetProperty("plan_digest").GetString() != claim.PlanDigest
+            || receipt.GetProperty("vendor_intent_digest").GetString() != claim.IntentDigest
+            || expires <= DateTimeOffset.UtcNow)
+            throw Invalid("LTX_LEASE_RECEIPT_INVALID");
+        gpu.RequireOwnedBy(journal);
+        return expires;
+    }
+
     private static async Task<JsonObject> BuildWitnessAsync(ProductionPlanRecord plan, string digest, string executor,
         string keyId, JsonElement challenge, IReadOnlyList<DurableReferenceSnapshot> snapshots, ProcessImageMeasurement image, CancellationToken ct)
     {
-        var references = plan.Tasks.Where(t => t.RenderIntent == "IMAGE_TO_VIDEO").Select(task =>
+        var pairs = plan.Tasks.Where(t => t.RenderIntent == "IMAGE_TO_VIDEO").Select(task =>
+            (task.ReferenceAsset ?? throw Invalid("CORE_CHALLENGE_REFERENCE_REQUIRED"),
+             snapshots.Single(s => s.Measurement.TaskId == task.ProductionTaskId))).ToArray();
+        return await BuildMeasuredWitnessAsync("production.worker_witness.v1", plan.ProductionJobId,
+            digest, executor, keyId, challenge, pairs, image, ct).ConfigureAwait(false);
+    }
+
+    // 05. Share the witness serialization, not the renderer signature domain.
+    private static async Task<JsonObject> BuildMeasuredWitnessAsync(string schema, string jobId, string digest,
+        string executor, string keyId, JsonElement challenge,
+        IReadOnlyList<(ProductionReferenceAssetV11Record Reference, DurableReferenceSnapshot Snapshot)> pairs,
+        ProcessImageMeasurement image, CancellationToken ct)
+    {
+        var references = pairs.Select(pair =>
         {
-            var m = snapshots.Single(s => s.Measurement.TaskId == task.ProductionTaskId).Measurement;
-            var r = task.ReferenceAsset ?? throw Invalid("CORE_CHALLENGE_REFERENCE_REQUIRED");
+            var m = pair.Snapshot.Measurement;
+            var r = pair.Reference;
             return new { production_task_id = m.TaskId, shot_id = m.ShotId, asset_id = m.AssetId, approval_id = m.ApprovalId,
                 approval_request_digest = r.ApprovalRequestDigest, source_sha256 = m.SourceSha256, source_bytes = m.SourceBytes,
                 source_relative_path = r.InputRelativePath, snapshot_sha256 = m.SnapshotSha256, snapshot_bytes = m.SnapshotBytes,
@@ -208,8 +479,8 @@ internal sealed class CoreWorkerChallengeClient : IDisposable
         var executable = image.Sha256;
         return JsonSerializer.SerializeToNode(new
         {
-            schema_version = "production.worker_witness.v1", algorithm = "ed25519", worker_key_id = keyId, executor_id = executor,
-            production_job_id = plan.ProductionJobId, plan_digest = digest, nonce = challenge.GetProperty("nonce").GetString(),
+            schema_version = schema, algorithm = "ed25519", worker_key_id = keyId, executor_id = executor,
+            production_job_id = jobId, plan_digest = digest, nonce = challenge.GetProperty("nonce").GetString(),
             // Preserve Core's exact UTC microsecond instants; existing codec normalizes bytes.
             issued_at = challenge.GetProperty("issued_at").GetString(), expires_at = challenge.GetProperty("expires_at").GetString(),
             worker_executable_sha256 = executable, journal_digest = Hash("[]"u8.ToArray()), journal_generation = 0,
@@ -481,11 +752,11 @@ internal sealed class CoreWorkerChallengeClient : IDisposable
             return approved;
         }
     }
-    private static void ValidateChallenge(JsonElement value, WorkerPublicIdentity identity, string executor, string job, string digest)
+    private static void ValidateChallenge(JsonElement value, WorkerPublicIdentity identity, string executor, string job, string digest, bool ltx = false)
     {
         Shape(value, "schema_version worker_key_id executor_id production_job_id plan_digest nonce issued_at expires_at");
         if (value.EnumerateObject().Any(p => p.Value.ValueKind != JsonValueKind.String)) throw Invalid("CORE_CHALLENGE_SHAPE_INVALID");
-        if (value.GetProperty("schema_version").GetString() != "production.worker_challenge.v1"
+        if (value.GetProperty("schema_version").GetString() != (ltx ? "production.ltx.worker_challenge.v1" : "production.worker_challenge.v1")
             || value.GetProperty("worker_key_id").GetString() != identity.KeyId || value.GetProperty("executor_id").GetString() != executor
             || value.GetProperty("production_job_id").GetString() != job || value.GetProperty("plan_digest").GetString() != digest
             || Hash(Convert.FromHexString(identity.PublicKeyHex)) != identity.Fingerprint || identity.KeyId != "wk-" + identity.Fingerprint[..40])
@@ -504,12 +775,114 @@ internal sealed class CoreWorkerChallengeClient : IDisposable
             throw Invalid("CORE_CHALLENGE_UTC_REQUIRED");
         return date;
     }
-    private async Task<JsonDocument> PostAsync(string route, object payload, HttpStatusCode expected, CancellationToken ct)
+    // 01. Snapshot consent uses the paired Core transport and existing session
+    //     guard. The entire reference, plan digest and intent must agree.
+    internal ITrustedReferenceApprovalSource LtxReferenceApproval(
+        ProductionReferenceAssetV11Record expected, string planDigest, string vendorIntentDigest) =>
+        new SessionBoundApproval(new LtxApproval(this, expected, planDigest, vendorIntentDigest), _requireCurrentSession);
+
+    private sealed class LtxApproval(CoreWorkerChallengeClient client, ProductionReferenceAssetV11Record expected,
+        string planDigest, string vendorIntentDigest) : ITrustedReferenceApprovalSource
+    {
+        public async Task<bool> IsApprovedAsync(TrustedReferenceDescriptor descriptor, CancellationToken ct)
+        {
+            try
+            {
+                if (expected.RightsScope != "ltx.desktop.local.i2v.production.v1"
+                    || descriptor != new TrustedReferenceDescriptor(expected.ApprovalId, expected.ShotId,
+                        expected.AssetId, expected.InputRelativePath, expected.Sha256, expected.Bytes))
+                    return false;
+                var route = "api/v1/production/jobs/" + Uri.EscapeDataString(expected.ProductionJobId) + "/ltx-reference/check";
+                using var response = await client.PostAsync(route,
+                    new { plan_digest = planDigest, vendor_intent_digest = vendorIntentDigest },
+                    HttpStatusCode.OK, ct).ConfigureAwait(false);
+                var body = response.RootElement;
+                Shape(body, "schema_version plan_digest vendor_intent_digest plan");
+                var plan = body.GetProperty("plan");
+                var reference = plan.GetProperty("reference_asset").Deserialize<ProductionReferenceAssetV11Record>();
+                return body.GetProperty("schema_version").GetString() == "production.ltx.reference_check.v1"
+                    && body.GetProperty("plan_digest").GetString() == planDigest
+                    && body.GetProperty("vendor_intent_digest").GetString() == vendorIntentDigest
+                    && plan.GetProperty("schema_version").GetString() == "1.2"
+                    && plan.GetProperty("production_profile").GetString() == "production.ltx.desktop.local.v1"
+                    && plan.GetProperty("production_job_id").GetString() == expected.ProductionJobId
+                    && plan.GetProperty("production_task_id").GetString() == expected.ProductionTaskId
+                    && plan.GetProperty("shot_id").GetString() == expected.ShotId
+                    && plan.GetProperty("creative_package_digest").GetString() == expected.CreativePackageDigest
+                    && Hash(CanonicalJson.Serialize(JsonNode.Parse(plan.GetRawText())!)) == planDigest
+                    && reference == expected;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception) { return false; } // 02. Network loss or changed consent is DENY.
+        }
+    }
+
+    // 01. Historical frozen plan readback uses the same paired session.
+    // 01. Explicit held reservation only, using the already paired Core.
+    internal async Task<ProductionJobRecord> FreezeLtxPilotAsync(string packageId, string approvalId,
+        string key, CancellationToken ct, string? selectedShotId = null,
+        string? rerollOfJobId = null, string? rerollVariant = null)
+    {
+        if (!Guid.TryParseExact(packageId, "D", out _) || !Guid.TryParseExact(approvalId, "D", out _)
+            || string.IsNullOrWhiteSpace(key) || key.Length > 200
+            || (selectedShotId is not null && (selectedShotId.Length is < 1 or > 80
+                || selectedShotId.Any(ch => !char.IsAsciiLetterOrDigit(ch) && ch is not ('_' or '.' or '-')))))
+            throw Invalid("LTX_FREEZE_REQUEST_INVALID");
+        // 02. Keep the old first-shot wire shape unchanged; only full-batch
+        //     selection sends the explicit Core-owned shot identity.
+        var payload = new JsonObject
+        {
+            ["creative_package_id"] = packageId,
+            ["approved_reference_id"] = approvalId,
+            ["idempotency_key"] = key
+        };
+        if (selectedShotId is not null) payload["selected_shot_id"] = selectedShotId;
+        // 03. A reroll adds only the exact source and idempotent variant IDs.
+        if (rerollOfJobId is not null || rerollVariant is not null)
+        {
+            if (!Guid.TryParseExact(rerollOfJobId, "D", out var source) || source == Guid.Empty
+                || !Guid.TryParseExact(rerollVariant, "D", out var variant) || variant == Guid.Empty)
+                throw Invalid("LTX_REROLL_REQUEST_INVALID");
+            payload["reroll_of_job_id"] = rerollOfJobId;
+            payload["reroll_variant"] = rerollVariant;
+        }
+        using var result = await PostAsync("api/v1/production/jobs/v1.2/freeze", payload,
+            HttpStatusCode.OK, ct).ConfigureAwait(false);
+        return result.RootElement.Deserialize<ProductionJobRecord>() ?? throw Invalid("LTX_FREEZE_RECEIPT_INVALID");
+    }
+
+    // 01. Read the exact historical candidate receipt through the same
+    //     paired Core session. No lease token or GPU operation is involved.
+    internal async Task<JsonElement> GetLtxCandidateAsync(string jobId, CancellationToken ct)
+    {
+        if (!Guid.TryParseExact(jobId, "D", out var parsed) || parsed == Guid.Empty)
+            throw Invalid("LTX_CANDIDATE_JOB_INVALID");
+        using var result = await RequestAsync(HttpMethod.Get,
+            "api/v1/production/jobs/" + Uri.EscapeDataString(jobId) + "/ltx-candidate/result",
+            null, HttpStatusCode.OK, ct).ConfigureAwait(false);
+        return result.RootElement.Clone();
+    }
+
+    internal async Task<JsonElement> GetLtxPlanAsync(string jobId, CancellationToken ct)
+    {
+        if (!Guid.TryParseExact(jobId, "D", out _)) throw Invalid("LTX_PLAN_JOB_INVALID");
+        using var result = await RequestAsync(HttpMethod.Get,
+            "api/v1/production/jobs/" + Uri.EscapeDataString(jobId) + "/ltx-plan",
+            null, HttpStatusCode.OK, ct).ConfigureAwait(false);
+        return result.RootElement.Clone();
+    }
+
+    private Task<JsonDocument> PostAsync(string route, object payload, HttpStatusCode expected, CancellationToken ct) =>
+        RequestAsync(HttpMethod.Post, route, payload, expected, ct);
+
+    private async Task<JsonDocument> RequestAsync(HttpMethod method, string route, object? payload,
+        HttpStatusCode expected, CancellationToken ct)
     {
         _requireCurrentSession();
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
         deadline.CancelAfter(TimeSpan.FromSeconds(10));
-        using var request = new HttpRequestMessage(HttpMethod.Post, route) { Content = JsonContent.Create(payload) };
+        using var request = new HttpRequestMessage(method, route);
+        if (payload is not null) request.Content = JsonContent.Create(payload);
         using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadline.Token).ConfigureAwait(false);
         if (response.StatusCode != expected) throw Invalid("CORE_CHALLENGE_OR_PREFLIGHT_UNEXPECTED_STATUS");
         if (response.Content.Headers.ContentType?.MediaType != "application/json" || response.Content.Headers.ContentLength > 16384)
