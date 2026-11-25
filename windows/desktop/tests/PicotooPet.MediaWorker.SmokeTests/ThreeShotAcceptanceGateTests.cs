@@ -58,6 +58,7 @@ internal static class ThreeShotAcceptanceGateTests
             File.WriteAllText(path, "{\"schema_version\":\"1.0\",\"mode\":\"hold\"}");
             AssertHeld(path, JobId, Digest);
             VerifyLtxBatch(path);
+            VerifyStoryBatchLifecycle(Path.Combine(root, "lifecycle-acceptance.json"));
             Console.WriteLine("P0_THREE_SHOT_GATE_FILE_HOLD_ALLOW_RESTART=PASS");
         }
         finally
@@ -149,6 +150,101 @@ internal static class ThreeShotAcceptanceGateTests
         File.Delete(path);
         Reject(ids[0], digests[0], identity);
         Console.WriteLine("LTX_ORDERED_BATCH_GATE=PASS; GPU_POST=0");
+    }
+
+    // P0-A: consecutive stories. A finished batch returns to HOLD in code, so
+    // story B / C never require a hand-edited acceptance file. HOLD only
+    // removes permission; in-flight or unfinished batches are never closed.
+    private static void VerifyStoryBatchLifecycle(string path)
+    {
+        var now = DateTimeOffset.UtcNow;
+        ProductionJobRecord[] Story(char seed) => Enumerable.Range(1, 3).Select(i => new ProductionJobRecord(
+            $"{seed}0000000-0000-4000-8000-00000000000{i}", "creative-" + seed, Digest, "project-" + seed,
+            "production.ltx.desktop.local.v1", new string((char)('0' + i), 63) + seed, "NeedsHuman", null, null,
+            "LTX_SIGNED_WORKER_NOT_ENABLED", null, $"fixture-{seed}-{i}", now, now, null)).ToArray();
+        ProductionJobRecord[] Settled(ProductionJobRecord[] jobs) =>
+            jobs.Select(job => job with { FailureCode = "LTX_PILOT_REVIEW_REQUIRED", FinishedAt = now }).ToArray();
+        string Mode() => JsonElement.Parse(File.ReadAllText(path)).GetProperty("mode").GetString()!;
+        void Expect(string code, Action action, string message)
+        {
+            try { action(); throw new InvalidOperationException(message); }
+            catch (ProductionWorkerException error) when (error.Code == code) { }
+        }
+
+        var a = Story('a'); var b = Story('b'); var c = Story('c');
+        RecoveryTests.Assert(a.All(LtxProductionExecutor.IsSelected) && Settled(a).All(LtxProductionExecutor.IsCandidateSettled),
+            "lifecycle fixtures must use the real executor predicates");
+        File.WriteAllText(path, "{\"schema_version\":\"1.0\",\"mode\":\"hold\"}");
+        P0ThreeShotAcceptanceGate.ArmReviewedLtxJobsAtPath(a, path);
+
+        // 01. Old behaviour (the reported blocker) is still enforced for an
+        //     UNFINISHED previous batch: no silent overwrite of a live permit.
+        Expect("LTX_OPERATOR_HOLD_REQUIRED", () => P0ThreeShotAcceptanceGate.ArmReviewedLtxJobsAtPath(b, path),
+            "unfinished story A must not be replaced by B");
+        Expect("LTX_BATCH_NOT_FINISHED", () => P0ThreeShotAcceptanceGate.ReturnLtxBatchToHoldAtPath(a, false, path),
+            "unfinished story A must not be closed implicitly");
+        Expect("LTX_BATCH_IN_FLIGHT", () => P0ThreeShotAcceptanceGate.ReturnLtxBatchToHoldAtPath(
+            [a[0] with { Status = "Rendering" }, a[1], a[2]], true, path), "rendering batch must never be closed");
+        Expect("LTX_BATCH_IN_FLIGHT", () => P0ThreeShotAcceptanceGate.ReturnLtxBatchToHoldAtPath(
+            [a[0] with { LeaseExecutorId = "worker" }, a[1], a[2]], true, path), "leased batch must never be closed");
+        Expect("LTX_BATCH_CHANGED", () => P0ThreeShotAcceptanceGate.ReturnLtxBatchToHoldAtPath(Settled(b), false, path),
+            "a different batch's facts cannot close the active permit");
+        RecoveryTests.Assert(Mode() == "allow_ltx_batch", "rejected closes must leave the permit untouched");
+
+        // 02. Story A finished -> HOLD -> story B armed, with no file editing.
+        P0ThreeShotAcceptanceGate.ReturnLtxBatchToHoldAtPath(Settled(a), false, path);
+        RecoveryTests.Assert(Mode() == "hold", "finished story A must return to HOLD");
+        P0ThreeShotAcceptanceGate.ReturnLtxBatchToHoldAtPath(Settled(a), false, path); // idempotent
+        P0ThreeShotAcceptanceGate.ArmReviewedLtxJobsAtPath(b, path);
+        var identityB = ProductionSubmissionJournal.Hash(string.Join("\n", b.Select(job => job.ProductionJobId + ":" + job.PlanDigest)));
+        using (var permit = P0ThreeShotAcceptanceGate.AcquireLtxSubmissionPermitAtPath(b[0].ProductionJobId, b[0].PlanDigest!, identityB, path))
+            RecoveryTests.Assert(permit is not null, "story B must be admitted after A returned to HOLD");
+        var identityA = ProductionSubmissionJournal.Hash(string.Join("\n", a.Select(job => job.ProductionJobId + ":" + job.PlanDigest)));
+        Expect("P0_THREE_SHOT_ACCEPTANCE_HELD", () =>
+        {
+            using var stale = P0ThreeShotAcceptanceGate.AcquireLtxSubmissionPermitAtPath(a[0].ProductionJobId, a[0].PlanDigest!, identityA, path);
+        }, "closed story A must never regain a permit");
+
+        // 03. An explicit abandon may close an unfinished, idle story B
+        //     (never-run shots and a failed shot), then story C proceeds.
+        P0ThreeShotAcceptanceGate.ReturnLtxBatchToHoldAtPath([Settled(b)[0], b[1] with { Status = "Failed", FailureCode = "LTX_RENDER_FAILED" }, b[2]], true, path);
+        RecoveryTests.Assert(Mode() == "hold", "explicit abandon must return idle story B to HOLD");
+        P0ThreeShotAcceptanceGate.ArmReviewedLtxJobsAtPath(c, path);
+        RecoveryTests.Assert(Mode() == "allow_ltx_batch", "story C must be armed after B was abandoned");
+
+        // 04. An active GPU permit blocks the HOLD writer, like every writer.
+        var settledC = Settled(c);
+        var identityC = ProductionSubmissionJournal.Hash(string.Join("\n", c.Select(job => job.ProductionJobId + ":" + job.PlanDigest)));
+        using (var permit = P0ThreeShotAcceptanceGate.AcquireLtxSubmissionPermitAtPath(c[2].ProductionJobId, c[2].PlanDigest!, identityC, path))
+        {
+            var blocked = false;
+            try { P0ThreeShotAcceptanceGate.ReturnLtxBatchToHoldAtPath(settledC, false, path); }
+            catch (IOException) { blocked = true; }
+            RecoveryTests.Assert(blocked, "active GPU permit must prevent the HOLD writer");
+        }
+        P0ThreeShotAcceptanceGate.ReturnLtxBatchToHoldAtPath(settledC, false, path);
+        RecoveryTests.Assert(Mode() == "hold", "story C returns to HOLD once finished");
+
+        // 05. Single-shot ALLOW (schema 1.0) follows the same lifecycle.
+        P0ThreeShotAcceptanceGate.ArmReviewedLtxJobsAtPath([a[0]], path);
+        P0ThreeShotAcceptanceGate.ReturnLtxBatchToHoldAtPath([Settled(a)[0]], false, path);
+        RecoveryTests.Assert(Mode() == "hold", "finished single-shot pilot returns to HOLD");
+        // 06. FLUX first frames for another story close a finished permit; the
+        //     same story's permit is kept so its own rerolls are not revoked.
+        RecoveryTests.Assert(P0ThreeShotAcceptanceGate.BelongsToStory(a, "creative-a")
+            && !P0ThreeShotAcceptanceGate.BelongsToStory(a, "creative-b")
+            && !P0ThreeShotAcceptanceGate.BelongsToStory([a[0], b[1]], "creative-a")
+            && !P0ThreeShotAcceptanceGate.BelongsToStory([], "creative-a"),
+            "FLUX story boundary must match the creative package exactly");
+
+        // 07. FLUX paths come only from the SHA-pinned runner's own constants.
+        var runnerSource = "COMFY = Path(r\"D:\\x\\ComfyUI\")\nPY = Path(r\"D:\\x\\python.exe\")\n";
+        var (comfy, python) = FluxRunnerLocalPaths.ParseRunnerPaths(runnerSource);
+        RecoveryTests.Assert(comfy == @"D:\x\ComfyUI" && python == @"D:\x\python.exe", "runner paths parse");
+        foreach (var bad in new[] { "", runnerSource + runnerSource, runnerSource.Replace("D:\\x\\ComfyUI", "ComfyUI") })
+            try { FluxRunnerLocalPaths.ParseRunnerPaths(bad); throw new InvalidOperationException("ambiguous runner paths accepted"); }
+            catch (InvalidDataException error) when (error.Message == "FLUX_DRAFT_RUNNER_PATHS_INVALID") { }
+        Console.WriteLine("LTX_STORY_BATCH_LIFECYCLE_A_B_C=PASS; FLUX_RUNNER_PATHS=PASS; GPU_POST=0");
     }
 
     private static string Allow(string jobId, string digest) =>

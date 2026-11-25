@@ -12,8 +12,9 @@ from contextlib import contextmanager
 import ctypes
 import hashlib
 import json
+import re
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import socket
 import stat
 import subprocess
@@ -28,8 +29,21 @@ from collect_local_keyframe_outputs import collect_flux_batch
 
 # 01. Exact historical production component paths; no caller-controlled
 #     executable or remote endpoint. A different installation needs local verification.
-COMFY = Path(r"D:\opc in D\AI\ComfyUI\ComfyUI")
-PYTHON = Path(r"D:\opc in D\AI\ComfyUI\standalone-env\python.exe")
+# P0-A: no second hard-coded installation path. The ComfyUI root and its Python
+# are read from the SHA-pinned historical runner itself (its own COMFY / PY
+# constants), so this bridge can never disagree with the runner it launches.
+_RUNNER_PATH_LINE = re.compile(r'^(COMFY|PY) = Path\(r"([^"\r\n]+)"\)\s*$', re.MULTILINE)
+
+
+def runner_installation_paths(raw: bytes) -> tuple[Path, Path]:
+    """Return (comfy_root, python) declared by the verified original runner."""
+    found: dict[str, list[str]] = {"COMFY": [], "PY": []}
+    for name, value in _RUNNER_PATH_LINE.findall(raw.decode("utf-8")):
+        found[name].append(value)
+    if any(len(values) != 1 for values in found.values()) or not all(
+            PureWindowsPath(values[0]).is_absolute() for values in found.values()):
+        raise ValueError("FLUX_DRAFT_RUNNER_PATHS_INVALID")
+    return Path(found["COMFY"][0]), Path(found["PY"][0])
 
 
 def _safe_path(path: Path) -> Path:
@@ -177,14 +191,19 @@ def execute(args: argparse.Namespace) -> Path:
     stage = _safe_path(args.run_dir)
     if stage.exists() or not stage.parent.is_dir():
         raise ValueError("FLUX_DRAFT_NEW_RUN_DIRECTORY_REQUIRED")
+    # Paths come only from the exact pinned runner bytes (same check as staging).
+    runner_raw = bridge._read_regular(_safe_path(args.runner), max_bytes=128_000)
+    if bridge._sha(runner_raw) != bridge.RUNNER_SHA256:
+        raise ValueError("FLUX_DRAFT_RUNNER_CHANGED")
+    comfy_root, python_exe = runner_installation_paths(runner_raw)
     # Validate the LoRA actually visible to the historical Comfy instance,
     # not an unrelated same-named copy supplied by the operator.
-    lora = _safe_path(COMFY / "models" / "loras" / "maotai_lora_v2.safetensors")
+    lora = _safe_path(comfy_root / "models" / "loras" / "maotai_lora_v2.safetensors")
     if lora != _safe_path(args.lora) or _hash(lora) != bridge.LORA_V2_SHA256:
         raise ValueError("FLUX_DRAFT_ACTIVE_LORA_MISMATCH")
-    if not _safe_path(PYTHON).is_file() or not _safe_path(COMFY / "main.py").is_file():
+    if not _safe_path(python_exe).is_file() or not _safe_path(comfy_root / "main.py").is_file():
         raise ValueError("FLUX_DRAFT_LEGACY_INSTALLATION_MISSING")
-    comfy_input = _safe_path(COMFY / "input")
+    comfy_input = _safe_path(comfy_root / "input")
     if not comfy_input.is_dir():
         raise ValueError("FLUX_DRAFT_COMFY_INPUT_MISSING")
 
@@ -234,7 +253,7 @@ def execute(args: argparse.Namespace) -> Path:
             # startup. It receives only the newly staged, hash-bound jobs file.
             # No shell, no API keys, no model update.
             with (stage / "execution.log").open("xb") as log:
-                result = subprocess.run([str(PYTHON), "-B", str(stage / "run_flux_board.py"),
+                result = subprocess.run([str(python_exe), "-B", str(stage / "run_flux_board.py"),
                                          "flux_board_jobs.json"],
                                         cwd=stage, stdin=subprocess.DEVNULL, stdout=log,
                                         stderr=subprocess.STDOUT, check=False, timeout=2400)

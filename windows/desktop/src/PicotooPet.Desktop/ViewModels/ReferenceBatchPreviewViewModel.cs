@@ -1166,8 +1166,20 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
             if (current.Status != "Approved" || current.ExpiresAt <= DateTimeOffset.UtcNow)
                 throw new InvalidDataException("REFERENCE_LTX_APPROVAL_NOT_CURRENT");
             ct.ThrowIfCancellationRequested();
+            // 03. A finished previous story returns to HOLD first, so story
+            //     two/three never need a hand-edited acceptance file.
+            await P0ThreeShotAcceptanceGate.ReturnFinishedLtxBatchToHoldAsync(
+                verified, production.ReadReviewedLtxJobAsync, ct);
             P0ThreeShotAcceptanceGate.ArmReviewedLtxJobs(verified);
             StatusText = $"已明确放行 {verified.Count} 个冻结 LTX 镜头；由既有 Worker 顺序执行，尚未确认渲染成功。";
+        }
+        catch (PicotooPet.Desktop.Core.Production.ProductionWorkerException error)
+            when (error.Code is "LTX_BATCH_NOT_FINISHED" or "LTX_BATCH_IN_FLIGHT")
+        {
+            StatusText = error.Code == "LTX_BATCH_IN_FLIGHT"
+                ? "上一个故事仍有镜头在生成中；请等它完成后再放行新故事。"
+                : "上一个故事还有未完成的镜头；完成或放弃后才能放行新故事。";
+            throw;
         }
         catch
         {

@@ -15,8 +15,8 @@ public interface IFluxDraftGateway
 /// <summary>Explicit local creative draft execution using the deployed FLUX bridge.</summary>
 internal static class FluxDraftExecution
 {
-    private const string Python = @"D:\opc in D\AI\ComfyUI\standalone-env\python.exe";
-    private const string Lora = @"D:\opc in D\AI\ComfyUI\ComfyUI\models\loras\maotai_lora_v2.safetensors";
+    // P0-A: no machine path in code. Python and the LoRA are resolved from the
+    // SHA-pinned runner named in the one-time local flux-draft.json.
 
     internal static async Task<FluxDraftResult> GenerateAsync(ControlCenterSession session,
         string creativeJobId, string packageId, string packageDigest, string? shotId, CancellationToken ct)
@@ -52,7 +52,9 @@ internal static class FluxDraftExecution
         var useCatalog = !File.Exists(map);
         if (useCatalog) map = Path.Combine(maps, "reusable-bindings.json");
         var script = Path.Combine(AppContext.BaseDirectory, "flux-tools", "scripts", "run_existing_flux_board_batch.py");
-        foreach (var file in new[] { runner, map, Python, Lora, script }) RequireFile(file);
+        RequireFile(runner);
+        var install = FluxRunnerLocalPaths.Resolve(runner);
+        foreach (var file in new[] { map, install.Python, install.Lora, script }) RequireFile(file);
 
         // 02. Download exact existing Core package, not a local StoryPack or
         //     an edited prompt. Immutable package bytes are rechecked in Python.
@@ -92,7 +94,11 @@ internal static class FluxDraftExecution
             && !File.Exists(Path.Combine(runs, $"v{number:D5}")), -1);
         if (variant < 0) throw new InvalidDataException("FLUX_DRAFT_VARIANT_LIMIT");
         var destination = Path.Combine(runs, $"v{variant:D5}");
-        var start = new ProcessStartInfo(Python)
+        // 03a. A FINISHED previous story's LTX permit returns to HOLD first; the
+        //      runner itself refuses to start unless the gate is HOLD.
+        await P0ThreeShotAcceptanceGate.ReturnFinishedLtxBatchToHoldBeforeOtherStoryAsync(
+            packageId, session.GetProductionJobAsync, ct).ConfigureAwait(false);
+        var start = new ProcessStartInfo(install.Python)
         {
             UseShellExecute = false,
             CreateNoWindow = true,
@@ -101,7 +107,7 @@ internal static class FluxDraftExecution
         foreach (var arg in new[] { "-B", "-E", "-s", script, "--package", zip,
             "--package-sha256", packageDigest, useCatalog ? "--reference-catalog" : "--reference-map",
             map, "--runner", runner,
-            "--lora", Lora, "--run-dir", destination, "--variant",
+            "--lora", install.Lora, "--run-dir", destination, "--variant",
             variant.ToString(System.Globalization.CultureInfo.InvariantCulture), "--execute" })
             start.ArgumentList.Add(arg);
         if (shotId is not null) { start.ArgumentList.Add("--shot"); start.ArgumentList.Add(shotId); }

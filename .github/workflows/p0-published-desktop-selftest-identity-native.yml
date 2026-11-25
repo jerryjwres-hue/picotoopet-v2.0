@@ -41,6 +41,17 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           global-json-file: windows/desktop/global.json
+      - name: Pin the repository .NET SDK for every dotnet call in this job
+        shell: pwsh
+        run: |
+          # Commands here run from the repository root, where no global.json existed, so the
+          # runner's newest preinstalled SDK (11.0.100) was silently used instead of the pinned
+          # 10.0.302 (MSB4216/MSB4027 task-host failures). Job-local copy; other workflows untouched.
+          Copy-Item -LiteralPath windows/desktop/global.json -Destination global.json -Force
+          $version = (dotnet --version)
+          $expected = (Get-Content windows/desktop/global.json -Raw | ConvertFrom-Json).sdk.version
+          if ($version -ne $expected) { throw "PINNED_SDK_NOT_ACTIVE_$version" }
+          Write-Host "DOTNET_SDK=$version"
       - name: Existing same-EXE recovery, real protected signing and host refusals
         shell: pwsh
         run: |
@@ -72,6 +83,17 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           global-json-file: windows/desktop/global.json
+      - name: Pin the repository .NET SDK for every dotnet call in this job
+        shell: pwsh
+        run: |
+          # Commands here run from the repository root, where no global.json existed, so the
+          # runner's newest preinstalled SDK (11.0.100) was silently used instead of the pinned
+          # 10.0.302 (MSB4216/MSB4027 task-host failures). Job-local copy; other workflows untouched.
+          Copy-Item -LiteralPath windows/desktop/global.json -Destination global.json -Force
+          $version = (dotnet --version)
+          $expected = (Get-Content windows/desktop/global.json -Raw | ConvertFrom-Json).sdk.version
+          if ($version -ne $expected) { throw "PINNED_SDK_NOT_ACTIVE_$version" }
+          Write-Host "DOTNET_SDK=$version"
       - name: Build disposable focused test harness (not a Worker)
         shell: pwsh
         run: |

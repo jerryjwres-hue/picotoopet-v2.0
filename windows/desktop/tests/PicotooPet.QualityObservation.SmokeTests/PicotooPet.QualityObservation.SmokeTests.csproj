@@ -7,6 +7,6 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../../../../tools/p0_visual_review/PicotooPet.VisualReview.csproj" />
+    <ProjectReference Include="../../../../tools/p0_visual_review_core/PicotooPet.VisualReview.Core.csproj" />
   </ItemGroup>
 </Project>

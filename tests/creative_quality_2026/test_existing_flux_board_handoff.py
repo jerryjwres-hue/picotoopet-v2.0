@@ -386,3 +386,44 @@ class ExistingFluxBoardHandoffTests(unittest.TestCase):
         wrong, wrong_sha = archive("changed-subject.zip")
         with self.assertRaisesRegex(ValueError, "REUSABLE_SUBJECT_OR_PRODUCT_MISMATCH"):
             module.resolve_reusable_bindings(wrong, wrong_sha, catalog)
+
+
+class RunnerInstallationPathTests(unittest.TestCase):
+    """P0-A: ComfyUI/Python paths come from the SHA-pinned historical runner only."""
+
+    RUNNER = (
+        '# PicotooPet static keyframe board V2\n'
+        'from pathlib import Path\n'
+        'COMFY = Path(r"D:\\opc in D\\AI\\ComfyUI\\ComfyUI")\n'
+        'PY = Path(r"D:\\opc in D\\AI\\ComfyUI\\standalone-env\\python.exe")\n'
+        'PORT = 8190\n'
+    )
+
+    def test_paths_are_parsed_from_the_verified_runner_not_constants(self):
+        import run_existing_flux_board_batch as batch
+
+        self.assertFalse(hasattr(batch, "COMFY"), "no second hard-coded ComfyUI root")
+        self.assertFalse(hasattr(batch, "PYTHON"), "no second hard-coded Python path")
+        comfy, python = batch.runner_installation_paths(self.RUNNER.encode("utf-8"))
+        self.assertEqual(str(comfy), r"D:\opc in D\AI\ComfyUI\ComfyUI")
+        self.assertEqual(str(python), r"D:\opc in D\AI\ComfyUI\standalone-env\python.exe")
+
+    def test_ambiguous_missing_or_relative_runner_paths_fail_closed(self):
+        import run_existing_flux_board_batch as batch
+
+        for source in (
+            self.RUNNER.replace('COMFY = ', 'X = '),
+            self.RUNNER + 'COMFY = Path(r"E:\\other")\n',
+            self.RUNNER.replace('D:\\opc in D\\AI\\ComfyUI\\standalone-env', 'relative\\env'),
+        ):
+            with self.assertRaisesRegex(ValueError, "FLUX_DRAFT_RUNNER_PATHS_INVALID"):
+                batch.runner_installation_paths(source.encode("utf-8"))
+
+    def test_windows_desktop_pins_the_same_runner_and_lora_digests(self):
+        cs = (SCRIPT.parents[1] / "windows/desktop/src/PicotooPet.Desktop/Services/FluxRunnerInstallation.cs").read_text(
+            encoding="utf-8")
+        self.assertIn(f'PinnedRunnerSha256 = "{module.RUNNER_SHA256}"', cs)
+        self.assertIn(f'LoraV2Sha256 = "{module.LORA_V2_SHA256}"', cs)
+        execution = (SCRIPT.parents[1] / "windows/desktop/src/PicotooPet.Desktop/Services/FluxDraftExecution.cs").read_text(
+            encoding="utf-8")
+        self.assertNotIn(r"D:\opc in D", execution, "no machine path hard-coded in the desktop executor")
