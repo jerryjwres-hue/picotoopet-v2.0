@@ -3,8 +3,12 @@ using System.Globalization;
 using System.Numerics;
 using System.Text;
 using System.Text.Json;
+using System.Security.Cryptography;
 
 namespace PicotooPet.Desktop.Services;
+
+// 01. Native LTX candidate evidence, separate from the mastered film profile.
+internal sealed record LtxCandidateMediaFacts(int Width, int Height, int FrameCount, int Fps, int DurationMs);
 
 /// <summary>C010 policy uses the existing bounded process runner, never the mux acceptance policy.</summary>
 public sealed class FinalVideoQaMediaProbe
@@ -27,6 +31,73 @@ public sealed class FinalVideoQaMediaProbe
         args.AddRange(["-f", "null", "-"]);
         await RunAsync(Start("ffmpeg.exe", path, args), TimeSpan.FromMinutes(2), "DECODE_FAILED", ct).ConfigureAwait(false);
         return facts;
+    }
+
+    // 02. Reuse the real ffprobe parser and full CPU decode, preserving the
+    //     original final-film policy. Packet count is not decoded frame count.
+    internal async Task<LtxCandidateMediaFacts> VerifyLtxCandidateAsync(string path, string sha256,
+        long bytes, CancellationToken ct)
+    {
+        if (!MasterVideoPathPolicy.IsSafeLocalFullyQualified(path)
+            || !path.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase)
+            || bytes is <= 0 or > 268435456
+            || sha256.Length != 64 || sha256.Any(c => c is not (>= '0' and <= '9') and not (>= 'a' and <= 'f')))
+            throw new FinalVideoQaException("INPUT_INVALID");
+        for (FileSystemInfo? item = new FileInfo(path); item is not null;
+             item = item is FileInfo file ? file.Directory : ((DirectoryInfo)item).Parent)
+            if (!item.Exists || (item.Attributes & FileAttributes.ReparsePoint) != 0)
+                throw new FinalVideoQaException("INPUT_INVALID");
+
+        // 03. Hold the source against writes/deletion throughout hash and decode.
+        await using var pin = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
+            128 * 1024, FileOptions.Asynchronous);
+        if (pin.Length != bytes || Convert.ToHexStringLower(await SHA256.HashDataAsync(pin, ct).ConfigureAwait(false)) != sha256)
+            throw new FinalVideoQaException("INPUT_INVALID");
+        var probe = Start("ffprobe.exe", path,
+            ["-v", "error", "-protocol_whitelist", "file", "-count_packets", "-count_frames", "-show_entries",
+             "format=format_name,duration,nb_streams:stream=index,codec_type,codec_name,profile,pix_fmt,width,height,r_frame_rate,avg_frame_rate,duration,time_base,sample_rate,channels,channel_layout,nb_read_packets,nb_read_frames:stream_disposition=attached_pic:chapter=id",
+             "-of", "json", path]);
+        var result = await RunAsync(probe, TimeSpan.FromSeconds(30), "PROBE_FAILED", ct).ConfigureAwait(false);
+        if (result.CleanupIncomplete) throw new FinalVideoQaException("PROBE_FAILED");
+        var facts = Parse(result.Stdout);
+        using var doc = JsonDocument.Parse(result.Stdout);
+        var video = doc.RootElement.GetProperty("streams").EnumerateArray()
+            .Single(s => s.GetProperty("codec_type").GetString() == "video");
+        if (!video.TryGetProperty("nb_read_frames", out var count)
+            || count.ValueKind != JsonValueKind.String
+            || !int.TryParse(count.GetString(), NumberStyles.None, CultureInfo.InvariantCulture, out var frames))
+            throw new FinalVideoQaException("VIDEO_STREAM_INVALID");
+        var measured = ValidateLtxCandidate(facts, frames);
+        var args = new List<string> { "-hide_banner", "-loglevel", "error", "-nostdin",
+            "-xerror", "-protocol_whitelist", "file", "-i", path, "-map", "0:v:0" };
+        if (facts.Audio is not null) args.AddRange(["-map", "0:a:0"]);
+        args.AddRange(["-f", "null", "-"]);
+        var decoded = await RunAsync(Start("ffmpeg.exe", path, args), TimeSpan.FromMinutes(2), "DECODE_FAILED", ct).ConfigureAwait(false);
+        if (decoded.CleanupIncomplete) throw new FinalVideoQaException("DECODE_FAILED");
+        return measured;
+    }
+
+    internal static LtxCandidateMediaFacts ValidateLtxCandidate(FinalQaObservedMedia facts, int frames)
+    {
+        // 04. Actual native portrait dimensions; do not infer pixels from 720p.
+        var v = facts.Video;
+        if (facts.ContainerFamily != "mp4" || v.Index != 0 || v.PacketCount is null or <= 0
+            || v.Width is < 256 or > 4096 || v.Height is < 256 or > 4096
+            || v.Width % 2 != 0 || v.Height % 2 != 0 || v.Width >= v.Height
+            || Math.Abs(16 * v.Width - 9 * v.Height) * 100 > 18 * v.Height
+            || v.FpsNumerator <= 0 || v.FpsDenominator <= 0
+            || (BigInteger)v.FpsNumerator != (BigInteger)24 * v.FpsDenominator)
+            throw new FinalVideoQaException("OUTPUT_PROFILE_MISMATCH");
+        if (facts.StreamCount != (facts.Audio is null ? 1 : 2)
+            || facts.Audio is not null && (facts.Audio.Index != 1 || facts.Audio.DurationUs <= 0))
+            throw new FinalVideoQaException("UNEXPECTED_STREAM");
+        if (v.DurationUs is < 3915500 or > 4084499 || frames is < 95 or > 97
+            || BigInteger.Abs((BigInteger)facts.FormatDurationUs - v.DurationUs) > 100000)
+            throw new FinalVideoQaException("RUNTIME_MISMATCH");
+        var ms = checked((int)((v.DurationUs + 500) / 1000));
+        if (Math.Abs(ms * 24 - frames * 1000) > 1008)
+            throw new FinalVideoQaException("RUNTIME_MISMATCH");
+        return new(v.Width, v.Height, frames, 24, ms);
     }
 
     private async Task<MasterVideoProcessResult> RunAsync(ProcessStartInfo start, TimeSpan timeout, string error, CancellationToken ct)
