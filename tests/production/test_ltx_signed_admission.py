@@ -320,3 +320,43 @@ def test_ltx_vendor_binding_is_exact_idempotent_and_not_media_success(pilot):
             reason="fixture revoke",
         )
         assert client.post(route, json=body).status_code == 409
+
+
+def test_ltx_candidate_settles_one_shot_without_certifying_a_film(pilot):
+    p = pilot
+    with TestClient(p.app) as client:
+        proof = witness(p, issue(client, p))
+        claim = client.post(p.root + "/ltx-claim", json=proof.model_dump(mode="json"))
+        assert claim.status_code == 200, claim.text
+        data = claim.json()
+        lease = {key: data[key] for key in (
+            "executor_id", "lease_token", "production_attempt_id", "plan_digest", "vendor_intent_digest",
+        )}
+        generation, asset, video = (str(uuid4()) for _ in range(3))
+        binding = dict(lease, generation_id=generation, start_frame_asset_id=asset)
+        body = dict(binding, video_asset_id=video,
+                    output_relpath=f"PicotooPet/ltx/{p.job.production_job_id}/{p.plan.production_task_id}/{generation}-video-{video}.mp4",
+                    output_sha256="a"*64, output_bytes=12345, mime_type="video/mp4",
+                    width=720, height=1280, frame_count=96, fps=24, duration_ms=4000,
+                    lane="local", decode_verified=True)
+        route = p.root + "/ltx-candidate/result"
+        assert client.post(route, json=body).status_code == 409
+        assert client.post(p.root + "/ltx-vendor/bind", json=binding).status_code == 200
+        before = facts(p)
+        for change in ({"width": 1280}, {"output_relpath": "../outside.mp4"},
+                       {"generation_id": str(uuid4())}, {"lease_token": "wrong"},
+                       {"lane": "cloud"}, {"decode_verified": False}):
+            assert client.post(route, json=dict(body, **change)).status_code in (409, 422)
+            assert facts(p) == before
+        result = client.post(route, json=body)
+        assert result.status_code == 200, result.text
+        assert result.json()["review_required"] is True and result.json()["mac_bytes_verified"] is False
+        assert p.db.scalar("SELECT status FROM production_jobs") == "NeedsHuman"
+        assert p.db.scalar("SELECT status FROM production_tasks") == "Succeeded"
+        assert p.db.scalar("SELECT lease_token_digest FROM production_jobs") is None
+        assert p.db.scalar("SELECT COUNT(*) FROM production_packages") == 0
+        after = facts(p)
+        assert client.post(route, json=body).json() == result.json()
+        assert client.post(route, json=dict(body, output_sha256="f"*64)).status_code == 409
+        assert client.post(route, json=dict(body, lease_token="wrong")).status_code == 409
+        assert facts(p) == after

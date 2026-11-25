@@ -417,3 +417,130 @@ def bind_ltx_vendor_generation(service: ProductionService, job_id: str,
             plan_digest=lease.plan_digest, vendor_intent_digest=lease.vendor_intent_digest,
             generation_id=request.generation_id, start_frame_asset_id=request.start_frame_asset_id,
         )
+
+
+class LtxCandidateEvidenceV12(BaseModel):
+    """Measured Windows media evidence, not creative or Mac byte verification."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    video_asset_id: UUID
+    output_relpath: str = Field(min_length=1, max_length=500)
+    output_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    output_bytes: int = Field(gt=0, le=256 * 1024 * 1024, strict=True)
+    mime_type: Literal["video/mp4"]
+    width: int = Field(ge=256, le=4096, strict=True)
+    height: int = Field(ge=256, le=4096, strict=True)
+    frame_count: int = Field(ge=95, le=97, strict=True)
+    fps: Literal[24]
+    duration_ms: int = Field(ge=3916, le=4084, strict=True)
+    lane: Literal["local"]
+    decode_verified: Literal[True]
+
+
+class LtxCandidateCommitV12(LtxVendorBindingRequestV12, LtxCandidateEvidenceV12):
+    """Exact active signed attempt plus measured local candidate."""
+
+
+class LtxCandidateReceiptV12(LtxCandidateEvidenceV12):
+    schema_version: Literal["production.ltx.candidate.v1"] = "production.ltx.candidate.v1"
+    production_job_id: str
+    production_task_id: str
+    production_attempt_id: str
+    plan_digest: str
+    vendor_intent_digest: str
+    generation_id: UUID
+    start_frame_asset_id: UUID
+    job_status: Literal["NeedsHuman"] = "NeedsHuman"
+    review_required: Literal[True] = True
+    mac_bytes_verified: Literal[False] = False
+
+
+def commit_ltx_candidate(service: ProductionService, job_id: str,
+                         request: LtxCandidateCommitV12) -> LtxCandidateReceiptV12:
+    """Settle the first-shot candidate, without certifying a complete film."""
+    # 01. Use actual decoded dimensions/cadence, not a guessed 720p pixel size.
+    #     Native geometry is accepted within 2% of 9:16; output mastering is separate.
+    if (request.video_asset_id.int == 0 or request.output_sha256 == "0" * 64
+        or request.width % 2 or request.height % 2 or request.width >= request.height
+        or abs(16 * request.width - 9 * request.height) * 100 > 18 * request.height
+        or abs(request.duration_ms * 24 - request.frame_count * 1000) > 1008):
+        raise ValueError("LTX_CANDIDATE_MEDIA_MISMATCH")
+    db = service.repository.database
+    with db.transaction() as connection:
+        plan = load_frozen_ltx_pilot_plan(service, job_id)
+        path = (f"PicotooPet/ltx/{job_id}/{plan.production_task_id}/"
+                f"{request.generation_id}-video-{request.video_asset_id}.mp4")
+        if request.output_relpath != path:
+            raise ValueError("LTX_CANDIDATE_PATH_MISMATCH")
+        evidence = LtxCandidateEvidenceV12.model_validate(
+            request.model_dump(include=set(LtxCandidateEvidenceV12.model_fields)))
+        receipt = LtxCandidateReceiptV12(
+            **evidence.model_dump(), production_job_id=job_id,
+            production_task_id=plan.production_task_id,
+            production_attempt_id=request.production_attempt_id,
+            plan_digest=request.plan_digest, vendor_intent_digest=request.vendor_intent_digest,
+            generation_id=request.generation_id, start_frame_asset_id=request.start_frame_asset_id,
+        )
+        result_digest = service._digest(receipt.model_dump(mode="json"))
+        attempt = connection.execute(
+            "SELECT * FROM production_attempts WHERE production_job_id=? AND production_attempt_id=?",
+            (job_id, request.production_attempt_id),
+        ).fetchone()
+        if (attempt is None or attempt["production_task_id"] != plan.production_task_id
+            or attempt["executor_id"] != request.executor_id
+            or attempt["ltx_generation_id"] != str(request.generation_id)
+            or attempt["ltx_start_frame_asset_id"] != str(request.start_frame_asset_id)):
+            raise ValueError("LTX_CANDIDATE_VENDOR_BINDING_REQUIRED")
+
+        # 02. Exact receipt replay after lost HTTP response is read-only.
+        #     It cannot renew, claim or overwrite a terminal candidate.
+        if attempt["ltx_result_digest"] is not None:
+            token_digest = hashlib.sha256(request.lease_token.encode()).hexdigest()
+            admission = connection.execute(
+                "SELECT * FROM production_worker_challenges WHERE production_job_id=? "
+                "AND admitted_lease_token_digest=? AND consumed_at IS NOT NULL",
+                (job_id, token_digest),
+            ).fetchone()
+            job = connection.execute(
+                "SELECT * FROM production_jobs WHERE production_job_id=?", (job_id,),
+            ).fetchone()
+            task = connection.execute(
+                "SELECT * FROM production_tasks WHERE production_task_id=?", (plan.production_task_id,),
+            ).fetchone()
+            if (admission is None or admission["executor_id"] != request.executor_id
+                or admission["plan_digest"] != request.plan_digest
+                or attempt["ltx_result_digest"] != result_digest
+                or attempt["status"] != "Succeeded"
+                or attempt["ltx_video_asset_id"] != str(request.video_asset_id)
+                or attempt["ltx_duration_ms"] != request.duration_ms
+                or job["status"] != "NeedsHuman" or job["failure_code"] != "LTX_PILOT_REVIEW_REQUIRED"
+                or task is None or task["status"] != "Succeeded"
+                or tuple(task[k] for k in ("output_relpath", "output_sha256", "output_bytes",
+                    "output_mime_type", "output_width", "output_height", "output_frame_count", "output_fps"))
+                    != (path, request.output_sha256, request.output_bytes, request.mime_type,
+                        request.width, request.height, request.frame_count, request.fps)):
+                raise ValueError("LTX_CANDIDATE_REPLAY_CONFLICT")
+            return receipt
+
+        # 03. New settlement requires the current signed reservation and live
+        #     approval. No legacy Wan result path or new production package.
+        lease = _check_ltx_lease_locked(service, connection, job_id, request)
+        stamp = datetime.now(UTC).isoformat()
+        connection.execute(
+            "UPDATE production_tasks SET status='Succeeded',output_relpath=?,output_sha256=?,"
+            "output_bytes=?,output_mime_type=?,output_width=?,output_height=?,output_frame_count=?,"
+            "output_fps=?,updated_at=?,finished_at=? WHERE production_task_id=?",
+            (path, request.output_sha256, request.output_bytes, request.mime_type, request.width,
+             request.height, request.frame_count, request.fps, stamp, stamp, lease.production_task_id),
+        )
+        connection.execute(
+            "UPDATE production_attempts SET status='Succeeded',finished_at=?,ltx_video_asset_id=?,"
+            "ltx_duration_ms=?,ltx_result_digest=? WHERE production_attempt_id=?",
+            (stamp, str(request.video_asset_id), request.duration_ms, result_digest, lease.production_attempt_id),
+        )
+        connection.execute(
+            "UPDATE production_jobs SET status='NeedsHuman',failure_code='LTX_PILOT_REVIEW_REQUIRED',"
+            "lease_executor_id=NULL,lease_token_digest=NULL,lease_expires_at=NULL,updated_at=?,finished_at=? "
+            "WHERE production_job_id=?", (stamp, stamp, job_id),
+        )
+        return receipt

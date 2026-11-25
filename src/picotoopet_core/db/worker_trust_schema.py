@@ -47,6 +47,9 @@ def upgrade_worker_trust_columns(connection) -> None:
         "production_attempts": {
             "ltx_generation_id": "TEXT",
             "ltx_start_frame_asset_id": "TEXT",
+            "ltx_video_asset_id": "TEXT",
+            "ltx_duration_ms": "INTEGER",
+            "ltx_result_digest": "TEXT",
         },
         "production_worker_keys": {"trust_model": "TEXT NOT NULL DEFAULT 'STRICT_UNVERIFIED'"},
         "production_worker_challenges": {

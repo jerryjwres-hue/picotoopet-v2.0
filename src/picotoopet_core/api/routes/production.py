@@ -38,6 +38,7 @@ from picotoopet_core.production.ltx_admission import (
     claim_ltx_first_attempt, LtxLeaseRequestV12, LtxLeaseReceiptV12, check_ltx_lease,
     LtxReferenceCheckV12, LtxReferenceReceiptV12, check_ltx_reference,
     LtxVendorBindingRequestV12, LtxVendorBindingReceiptV12, bind_ltx_vendor_generation,
+    LtxCandidateCommitV12, LtxCandidateReceiptV12, commit_ltx_candidate,
 )
 from picotoopet_core.security.auth import require_auth
 
@@ -233,6 +234,19 @@ def bind_production_ltx_vendor_v12(
     # 01. Bind the exact acknowledged generation; no new attempt or render.
     response.headers["Cache-Control"] = "no-store, private"
     return execute_production(lambda: bind_ltx_vendor_generation(
+        request.app.state.services.production, production_job_id, payload,
+    ))
+
+
+@router.post("/production/jobs/{production_job_id}/ltx-candidate/result",
+             response_model=LtxCandidateReceiptV12)
+def commit_production_ltx_candidate_v12(
+    production_job_id: str, payload: LtxCandidateCommitV12,
+    request: Request, response: Response,
+) -> LtxCandidateReceiptV12:
+    # 01. First-shot technical evidence only; never certify a whole film.
+    response.headers["Cache-Control"] = "no-store, private"
+    return execute_production(lambda: commit_ltx_candidate(
         request.app.state.services.production, production_job_id, payload,
     ))
 
