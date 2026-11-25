@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import importlib.util
 import json
 import sys
 import tempfile
@@ -14,11 +13,10 @@ from unittest.mock import patch
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "prepare_existing_flux_board_shot.py"
 sys.path.insert(0, str(SCRIPT.parent))
-SPEC = importlib.util.spec_from_file_location("_existing_flux_board_handoff", SCRIPT)
-assert SPEC and SPEC.loader
-module = importlib.util.module_from_spec(SPEC)
-sys.modules[SPEC.name] = module
-SPEC.loader.exec_module(module)
+# 01. Import the same module used by collect_flux_batch. Synthetic SHA
+#     patches must apply to both preparation and collection in this fixture.
+#     Production constants remain unchanged outside the test.
+import prepare_existing_flux_board_shot as module
 
 SYNTHETIC_BUILDER = '''# Synthetic only: matches the handoff API, never runs ComfyUI.
 def build(job, seed, ref_names):
