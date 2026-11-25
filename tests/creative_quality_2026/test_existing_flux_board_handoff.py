@@ -247,3 +247,42 @@ class ExistingFluxBoardHandoffTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "CORE_SHOT_REFERENCES_MISSING"):
             run("missing", 0)
         self.assertFalse((self.root / "missing").exists())
+
+
+    def test_flux_output_collection_reuses_real_history_and_png_checks(self):
+        # 01. Reuse the existing synthetic builder and Core Kit fixture.
+        from test_prepare_local_keyframe_batch import fixture, PACKAGE_ID
+        from test_collect_local_keyframe_outputs import png
+        from collect_local_keyframe_outputs import collect_flux_batch
+        from prepare_local_keyframe_batch import canonical_bytes
+        _, _, _, package = fixture()
+        package["stage_results"]["creative_brief.v1"]["output_profile_id"] = "video.vertical.v1"
+        archive = self.root / "source.zip"
+        with zipfile.ZipFile(archive, "w") as z:
+            z.writestr(f"{PACKAGE_ID}/creative-package.json", canonical_bytes(package))
+        digest = _sha(archive.read_bytes())
+        bindings = self.root / "map.json"
+        bindings.write_text(json.dumps({"schema": "picotoo.flux-board-reference-map.v1",
+            "creative_package_sha256": digest, "shots": {"shot-2": self.value["references"]}}))
+        batch = self.root / "reroll-2"
+        module.prepare_package_batch(package_file=archive, package_sha=digest, bindings_file=bindings,
+            runner_file=self.runner, lora_file=self.lora, output_dir=batch, variant=4, selected_shot="shot-2")
+        output = self.root / "comfy-out"
+        output.mkdir()
+        (output / "frame.png").write_bytes(png(864, 1536))
+        graph = json.loads((batch / "shot-02" / "flux_board_candidate_api_graph.json").read_bytes())
+        prompt_id = "00000000-0000-4000-8000-000000000002"
+        entry = {"status": {"status_str": "success", "completed": True},
+                 "prompt": [1, prompt_id, graph], "outputs": {"27": {"images": [
+                     {"type": "output", "subfolder": "", "filename": "frame.png"}]}}}
+        result = collect_flux_batch(batch, {prompt_id: entry}, output)
+        self.assertEqual(result["selected_shot"], "shot-2")
+        self.assertEqual(result["shots"][0]["order"], 2)
+        self.assertEqual(result["shots"][0]["candidates"][0]["sha256"], _sha((output / "frame.png").read_bytes()))
+        self.assertFalse(result["reference_approved"])
+        self.assertEqual(result["gpu_post"], 0)
+        with self.assertRaisesRegex(ValueError, "FLUX_CANDIDATE_HISTORY_MISSING_OR_AMBIGUOUS"):
+            collect_flux_batch(batch, {}, output)
+        (output / "frame.png").write_bytes(png(720, 1280))
+        with self.assertRaisesRegex(ValueError, "FLUX_CANDIDATE_OUTPUT_MISMATCH"):
+            collect_flux_batch(batch, {prompt_id: entry}, output)

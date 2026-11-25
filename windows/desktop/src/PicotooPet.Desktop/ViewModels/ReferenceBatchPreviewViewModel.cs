@@ -48,6 +48,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
     private readonly HashSet<string> _eligibleShots;
     private readonly bool _requiresFullV2Batch;
     private readonly bool _p0PlanCandidate;
+    private readonly bool _portraitFluxCandidate;
     private readonly string _creativeJobId;
     private readonly string _keyframeKitDigest;
     private readonly Dictionary<string, (ReferencePreviewSnapshot Snapshot, ReferencePreviewItem Item)> _snapshots = new(StringComparer.Ordinal);
@@ -116,6 +117,14 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
             && Text(brief, "output_profile_id") == "video.landscape.v1"
             && shots.EnumerateArray().All(shot => shot.TryGetProperty("duration_seconds", out var duration)
                 && duration.ValueKind == JsonValueKind.Number && duration.TryGetDouble(out var seconds) && seconds == 4);
+        // 01b. Portrait FLUX observations reuse the existing thumbnail view,
+        //      but never enter the landscape Wan plan or registration path.
+        _portraitFluxCandidate = v2Candidate && KeyframeInstructions.Count == 3
+            && stages.TryGetProperty("creative_brief.v1", out var portraitBrief)
+            && Text(portraitBrief, "output_profile_id") == "video.vertical.v1"
+            && shots.EnumerateArray().All(shot => shot.TryGetProperty("duration_seconds", out var portraitDuration)
+                && portraitDuration.ValueKind == JsonValueKind.Number && portraitDuration.TryGetDouble(out var portraitSeconds)
+                && portraitSeconds == 4);
         // 02. A frozen Kit is the permanent trusted source for these three
         //     briefs; an optional local report can replace only observation status.
         ResetCompositionWorkOrdersToFrozen();
@@ -154,7 +163,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
     }
     public bool IsBusy => Volatile.Read(ref _operation) != 0;
     public bool CanEdit => !IsBusy && _frozenRequest is null;
-    public bool CanLoadObservedCandidates => CanEdit && _p0PlanCandidate;
+    public bool CanLoadObservedCandidates => CanEdit && (_p0PlanCandidate || _portraitFluxCandidate);
     public bool CanLoadCompositionWorkOrder => CanEdit && _p0PlanCandidate;
     // 02. Export is solely a copy of frozen source data, even after a
     //     request is locked; it does not mutate state or authorize GPU.
@@ -191,7 +200,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
         }
         return string.Join("\n", text);
     }
-    public bool CanResumeReferenceBatch => CanLoadObservedCandidates
+    public bool CanResumeReferenceBatch => CanEdit && _p0PlanCandidate
         && _initialReceipt is null && Items.Count == 0;
     public bool CanSubmit => !IsBusy && _initialReceipt is null && _consent && Items.Count > 0
         && (!_requiresFullV2Batch || (Items.Count == _eligibleShots.Count
@@ -532,6 +541,12 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
                 });
                 var root = document.RootElement;
                 RequireDistinctJsonProperties(root);
+                var flux = Text(root, "renderer") == "flux2.still.864x1536.v1";
+                var selectedShot = Text(root, "selected_shot");
+                if (flux != _portraitFluxCandidate
+                    || (flux && Text(root, "source_output_profile") != "video.vertical.v1")
+                    || (!flux && Text(root, "renderer") != ""))
+                    throw new InvalidDataException("KEYFRAME_OBSERVATION_RENDERER_INVALID");
                 if (Text(root, "schema") != "picotoo.local-keyframe-output-candidates.v1"
                     || Text(root, "creative_package_id") != CreativePackageId
                     || Text(root, "creative_package_sha256") != CreativePackageDigest
@@ -542,7 +557,8 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
                     || Number(root, "gpu_post") != 0
                     || Text(root, "review_status") != "NEEDS_HUMAN_REVIEW"
                     || !root.TryGetProperty("shots", out var shots)
-                    || shots.ValueKind != JsonValueKind.Array || shots.GetArrayLength() != 3)
+                    || shots.ValueKind != JsonValueKind.Array
+                    || shots.GetArrayLength() != (flux && selectedShot.Length != 0 ? 1 : 3))
                     throw new InvalidDataException("KEYFRAME_OBSERVATION_CONTEXT_INVALID");
                 // 09. For multi-import, one distinct exact batch manifest digest
                 //     per source is required. Legacy one-file observations
@@ -568,7 +584,11 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
                             ? promptValue.ValueKind != JsonValueKind.Null
                             : !IsIdentifier(promptId) || !seenPrompts.Add(promptId)))
                         throw new InvalidDataException("KEYFRAME_OBSERVATION_HISTORY_ID_INVALID");
-                    if (shotId != EligibleShots[index] || Number(shot, "order") != index + 1
+                    // 01. A single-shot FLUX reroll retains its original order.
+                    var expectedIndex = flux && selectedShot.Length != 0
+                        ? Array.IndexOf(EligibleShots, selectedShot) : index;
+                    if (expectedIndex < 0 || shotId != EligibleShots[expectedIndex]
+                        || Number(shot, "order") != expectedIndex + 1
                         || !IsDigest(Text(shot, "prepared_graph_sha256"))
                         || !shot.TryGetProperty("selected_reference", out var selected)
                         || selected.ValueKind != JsonValueKind.Null
@@ -588,6 +608,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
                             || bytes is <= 0 or > ReferencePreviewSnapshotStager.MaxBytes
                             || width is < 1 or > 8192 || height is < 1 or > 8192
                             || width * height > 16_000_000
+                            || (flux && (width != 864 || height != 1536))
                             || !Bool(item, "image_container_crc_verified")
                             || (embedded && !Bool(item, "embedded_prompt_graph_verified"))
                             || Bool(item, "pixels_decoded") || Text(item, "visual_review") != "UNREVIEWED")
@@ -627,7 +648,7 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
     public async Task InspectObservedCandidatesAsync(string outputRoot, CancellationToken cancellationToken = default)
     {
         if (!CanLoadObservedCandidates || !Path.IsPathFullyQualified(outputRoot)
-            || ObservedCandidates.Count is < 3 or > 96)
+            || ObservedCandidates.Count < (_portraitFluxCandidate ? 1 : 3) || ObservedCandidates.Count > 96)
             throw new InvalidDataException("KEYFRAME_THUMBNAIL_CONTEXT_INVALID");
         if (!Enter()) throw new InvalidOperationException("REFERENCE_OPERATION_BUSY");
         try
@@ -682,7 +703,9 @@ public sealed class ReferenceBatchPreviewViewModel : ObservableObject
     public async Task AddObservedCandidateAsync(ReferenceObservedCandidate observed,
         string comfyOutputRoot, string licensedSourceDigest, CancellationToken cancellationToken = default)
     {
-        if (!CanEdit || observed is null || !ObservedCandidates.Contains(observed)
+        // 01. Portrait FLUX review is read-only until the existing LTX rights
+        //     scope is connected; never silently register it as Wan consent.
+        if (_portraitFluxCandidate || !CanEdit || observed is null || !ObservedCandidates.Contains(observed)
             || !IsDigest(licensedSourceDigest) || !Path.IsPathFullyQualified(comfyOutputRoot))
             throw new InvalidDataException("KEYFRAME_OBSERVED_RIGHTS_OR_SCOPE_REQUIRED");
         var path = ProductionLocalEnvironment.ResolveUnderRoot(
