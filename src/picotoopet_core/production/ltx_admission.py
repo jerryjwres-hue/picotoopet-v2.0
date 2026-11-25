@@ -545,3 +545,60 @@ def commit_ltx_candidate(service: ProductionService, job_id: str,
             "WHERE production_job_id=?", (stamp, stamp, job_id),
         )
         return receipt
+
+
+def read_ltx_candidate(service: ProductionService, job_id: str) -> LtxCandidateReceiptV12:
+    """Recover exact settled candidate evidence; no lease, POST or film approval."""
+    # 01. Rebuild the original receipt from existing SQL facts, not a new
+    #     package or a caller-supplied hash. Hold a consistent DB transaction.
+    db = service.repository.database
+    with db.transaction() as connection:
+        plan = load_frozen_ltx_pilot_plan(service, job_id)
+        job = connection.execute(
+            "SELECT * FROM production_jobs WHERE production_job_id=?", (job_id,),
+        ).fetchone()
+        tasks = connection.execute(
+            "SELECT * FROM production_tasks WHERE production_job_id=?", (job_id,),
+        ).fetchall()
+        attempts = connection.execute(
+            "SELECT * FROM production_attempts WHERE production_job_id=?", (job_id,),
+        ).fetchall()
+        if (job is None or job["status"] != "NeedsHuman"
+            or job["failure_code"] != "LTX_PILOT_REVIEW_REQUIRED"
+            or job["lease_token_digest"] is not None or job["lease_executor_id"] is not None
+            or job["lease_expires_at"] is not None or not job["finished_at"]
+            or len(tasks) != 1 or len(attempts) != 1):
+            raise ValueError("LTX_CANDIDATE_NOT_SETTLED")
+        task, attempt = tasks[0], attempts[0]
+        if (task["production_task_id"] != plan.production_task_id
+            or task["shot_id"] != plan.shot_id or task["workflow_id"] != plan.workflow_id
+            or task["status"] != "Succeeded" or task["attempt_count"] != 1
+            or task["comfy_prompt_id"] is not None
+            or attempt["production_task_id"] != plan.production_task_id
+            or attempt["status"] != "Succeeded" or attempt["comfy_prompt_id"] is not None
+            or not attempt["ltx_result_digest"]
+            or not task["finished_at"] or not attempt["finished_at"]):
+            raise ValueError("LTX_CANDIDATE_PERSISTED_IDENTITY_MISMATCH")
+        # 02. The immutable signed attempt recorded this result digest at
+        #     settlement. Reconstruct and compare all fields before readback.
+        receipt = LtxCandidateReceiptV12(
+            production_job_id=job_id, production_task_id=plan.production_task_id,
+            production_attempt_id=attempt["production_attempt_id"],
+            plan_digest=plan.digest(), vendor_intent_digest=vendor_intent_digest(plan),
+            generation_id=attempt["ltx_generation_id"],
+            start_frame_asset_id=attempt["ltx_start_frame_asset_id"],
+            video_asset_id=attempt["ltx_video_asset_id"],
+            output_relpath=task["output_relpath"], output_sha256=task["output_sha256"],
+            output_bytes=task["output_bytes"], mime_type=task["output_mime_type"],
+            width=task["output_width"], height=task["output_height"],
+            frame_count=task["output_frame_count"], fps=task["output_fps"],
+            duration_ms=attempt["ltx_duration_ms"], lane="local", decode_verified=True,
+        )
+        expected = (f"PicotooPet/ltx/{job_id}/{plan.production_task_id}/"
+                    f"{receipt.generation_id}-video-{receipt.video_asset_id}.mp4")
+        if (receipt.output_relpath != expected
+            or service._digest(receipt.model_dump(mode="json")) != attempt["ltx_result_digest"]):
+            raise ValueError("LTX_CANDIDATE_PERSISTED_DIGEST_MISMATCH")
+        # 03. This is historical technical evidence, not a current grant.
+        #     A consumer must verify local bytes again and cannot claim film PASS.
+        return receipt

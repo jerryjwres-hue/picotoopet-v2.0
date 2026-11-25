@@ -38,7 +38,7 @@ from picotoopet_core.production.ltx_admission import (
     claim_ltx_first_attempt, LtxLeaseRequestV12, LtxLeaseReceiptV12, check_ltx_lease,
     LtxReferenceCheckV12, LtxReferenceReceiptV12, check_ltx_reference,
     LtxVendorBindingRequestV12, LtxVendorBindingReceiptV12, bind_ltx_vendor_generation,
-    LtxCandidateCommitV12, LtxCandidateReceiptV12, commit_ltx_candidate,
+    LtxCandidateCommitV12, LtxCandidateReceiptV12, commit_ltx_candidate, read_ltx_candidate,
 )
 from picotoopet_core.security.auth import require_auth
 
@@ -248,6 +248,18 @@ def commit_production_ltx_candidate_v12(
     response.headers["Cache-Control"] = "no-store, private"
     return execute_production(lambda: commit_ltx_candidate(
         request.app.state.services.production, production_job_id, payload,
+    ))
+
+
+@router.get("/production/jobs/{production_job_id}/ltx-candidate/result",
+            response_model=LtxCandidateReceiptV12)
+def read_production_ltx_candidate_v12(
+    production_job_id: str, request: Request, response: Response,
+) -> LtxCandidateReceiptV12:
+    # 01. Authenticated historical evidence for local review/assembly only.
+    response.headers["Cache-Control"] = "no-store, private"
+    return execute_production(lambda: read_ltx_candidate(
+        request.app.state.services.production, production_job_id,
     ))
 
 

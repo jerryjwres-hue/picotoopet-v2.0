@@ -340,6 +340,8 @@ def test_ltx_candidate_settles_one_shot_without_certifying_a_film(pilot):
                     width=720, height=1280, frame_count=96, fps=24, duration_ms=4000,
                     lane="local", decode_verified=True)
         route = p.root + "/ltx-candidate/result"
+        # 01. No incomplete candidate can be used for assembly.
+        assert client.get(route).status_code == 409
         assert client.post(route, json=body).status_code == 409
         assert client.post(p.root + "/ltx-vendor/bind", json=binding).status_code == 200
         before = facts(p)
@@ -356,7 +358,21 @@ def test_ltx_candidate_settles_one_shot_without_certifying_a_film(pilot):
         assert p.db.scalar("SELECT lease_token_digest FROM production_jobs") is None
         assert p.db.scalar("SELECT COUNT(*) FROM production_packages") == 0
         after = facts(p)
+        # 02. Readback returns the exact committed evidence, without token,
+        #     new attempt, lease or package. Repeated reads do not mutate SQL.
+        observed = client.get(route)
+        assert observed.status_code == 200, observed.text
+        assert observed.json() == result.json()
+        assert observed.headers["cache-control"] == "no-store, private"
+        assert client.get(route).json() == result.json()
+        assert facts(p) == after
         assert client.post(route, json=body).json() == result.json()
         assert client.post(route, json=dict(body, output_sha256="f"*64)).status_code == 409
         assert client.post(route, json=dict(body, lease_token="wrong")).status_code == 409
+        assert facts(p) == after
+        # 03. Stored metadata corruption cannot masquerade as an eligible clip.
+        p.db.execute("UPDATE production_tasks SET output_sha256=?", ("f"*64,))
+        assert client.get(route).status_code == 409
+        p.db.execute("UPDATE production_tasks SET output_sha256=?", ("a"*64,))
+        assert client.get(route).json() == result.json()
         assert facts(p) == after

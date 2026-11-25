@@ -841,6 +841,18 @@ internal sealed class CoreWorkerChallengeClient : IDisposable
         return result.RootElement.Deserialize<ProductionJobRecord>() ?? throw Invalid("LTX_FREEZE_RECEIPT_INVALID");
     }
 
+    // 01. Read the exact historical candidate receipt through the same
+    //     paired Core session. No lease token or GPU operation is involved.
+    internal async Task<JsonElement> GetLtxCandidateAsync(string jobId, CancellationToken ct)
+    {
+        if (!Guid.TryParseExact(jobId, "D", out var parsed) || parsed == Guid.Empty)
+            throw Invalid("LTX_CANDIDATE_JOB_INVALID");
+        using var result = await RequestAsync(HttpMethod.Get,
+            "api/v1/production/jobs/" + Uri.EscapeDataString(jobId) + "/ltx-candidate/result",
+            null, HttpStatusCode.OK, ct).ConfigureAwait(false);
+        return result.RootElement.Clone();
+    }
+
     internal async Task<JsonElement> GetLtxPlanAsync(string jobId, CancellationToken ct)
     {
         if (!Guid.TryParseExact(jobId, "D", out _)) throw Invalid("LTX_PLAN_JOB_INVALID");
