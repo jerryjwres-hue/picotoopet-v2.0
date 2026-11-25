@@ -7,4 +7,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <LangVersion>14.0</LangVersion>
   </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../p0_visual_review_core/PicotooPet.VisualReview.Core.csproj" />
+  </ItemGroup>
 </Project>

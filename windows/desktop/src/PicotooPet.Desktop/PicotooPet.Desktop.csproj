@@ -14,8 +14,9 @@
     <!-- #162 controller exception: exact managed Ed25519 primitive; no runtime download. -->
     <PackageReference Include="BouncyCastle.Cryptography" Version="[2.7.0]" />
     <ProjectReference Include="..\PicotooPet.Desktop.Core\PicotooPet.Desktop.Core.csproj" />
-    <!-- Reuse the existing read-only observer assembly; no model or external FFmpeg redistribution. -->
-    <ProjectReference Include="..\..\..\..\tools\p0_visual_review\PicotooPet.VisualReview.csproj" />
+    <!-- Reuse the existing read-only observer LIBRARY (not the CLI Exe: an Exe reference leaks its
+         runtimeconfig.json into strict single-file publish, NETSDK1236). No model or FFmpeg redistribution. -->
+    <ProjectReference Include="..\..\..\..\tools\p0_visual_review_core\PicotooPet.VisualReview.Core.csproj" />
     <!-- Preview-only managed CPU WebP codec: separate from zero-package Core and built-in system tray. -->
     <ProjectReference Include="..\PicotooPet.ReferencePreview.Codecs\PicotooPet.ReferencePreview.Codecs.csproj" />
     <Resource Include="Assets\Pet\Husky\V1\*.png" />

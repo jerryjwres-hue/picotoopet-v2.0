@@ -8,6 +8,8 @@ on:
       - "scripts/run_existing_flux_board_batch.py"
       - "scripts/collect_local_keyframe_outputs.py"
       - "tests/creative_quality_2026/test_existing_flux_board_handoff.py"
+      - "windows/desktop/src/PicotooPet.Desktop/Services/FluxRunnerInstallation.cs"
+      - "windows/desktop/src/PicotooPet.Desktop/Services/FluxDraftExecution.cs"
   workflow_dispatch:
 
 permissions:

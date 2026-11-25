@@ -296,6 +296,84 @@ internal static class P0ThreeShotAcceptanceGate
         stream.Flush(flushToDisk: true);
     }
 
+    // 11. Story batch lifecycle (P0-A). A finished story returns its permit to
+    //     HOLD in code, so the next story is armed without editing this file.
+    //     HOLD only ever removes permission: it cannot claim, sign or POST.
+    //     In-flight work (rendering / leased) is never closed; an unfinished
+    //     story is closed only by an explicit abandon. Same GPU lock + journal.
+    private static readonly HashSet<string> InFlightStatuses = new(StringComparer.Ordinal)
+        { "Claimed", "Preflight", "Rendering", "Collecting", "QualityCheck" };
+
+    // 11a. Before arming a DIFFERENT batch. An exact retry of the same batch is unchanged.
+    internal static Task ReturnFinishedLtxBatchToHoldAsync(IReadOnlyList<ProductionJobRecord> next,
+        Func<string, CancellationToken, Task<ProductionJobRecord>> readJob, CancellationToken ct) =>
+        CloseActiveIfFinishedAsync(
+            active => active.SequenceEqual(next.Select(job => new Entry(job.ProductionJobId, job.PlanDigest ?? ""))),
+            _ => false, readJob, ct);
+
+    // 11b. Before FLUX first frames for ANOTHER creative package (story). The
+    //      same story's permit is left untouched (its rerolls stay possible).
+    internal static Task ReturnFinishedLtxBatchToHoldBeforeOtherStoryAsync(string creativePackageId,
+        Func<string, CancellationToken, Task<ProductionJobRecord>> readJob, CancellationToken ct) =>
+        CloseActiveIfFinishedAsync(_ => false, jobs => BelongsToStory(jobs, creativePackageId), readJob, ct);
+
+    internal static bool BelongsToStory(IReadOnlyList<ProductionJobRecord> jobs, string creativePackageId) =>
+        jobs.Count != 0 && jobs.All(job => string.Equals(job.CreativePackageId, creativePackageId, StringComparison.Ordinal));
+
+    private static async Task CloseActiveIfFinishedAsync(Func<Entry[], bool> keepByEntries,
+        Func<IReadOnlyList<ProductionJobRecord>, bool> keepByJobs,
+        Func<string, CancellationToken, Task<ProductionJobRecord>> readJob, CancellationToken ct)
+    {
+        var active = ActiveEntries(ReadAt(DefaultPath));
+        if (active is null || keepByEntries(active)) return;
+        var current = new List<ProductionJobRecord>();
+        foreach (var entry in active)
+            current.Add(await readJob(entry.JobId, ct).ConfigureAwait(false));
+        if (keepByJobs(current)) return;
+        var journal = new ProductionSubmissionJournal(ProductionSubmissionJournal.DefaultRoot);
+        using var gpu = journal.AcquireGpu();
+        if (journal.Pending().Count != 0) throw new ProductionWorkerException("MEDIA_PENDING_RECONCILIATION");
+        ReturnLtxBatchToHoldAtPath(current, abandonUnfinished: false, DefaultPath);
+    }
+
+    internal static void ReturnLtxBatchToHoldAtPath(IReadOnlyList<ProductionJobRecord> current,
+        bool abandonUnfinished, string path)
+    {
+        for (DirectoryInfo? directory = new(Path.GetDirectoryName(path)!); directory is not null; directory = directory.Parent)
+            if (directory.Exists && (directory.Attributes & FileAttributes.ReparsePoint) != 0)
+                throw new IOException("P0_ACCEPTANCE_PATH_INVALID");
+        if (!File.Exists(path) || (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+            throw new ProductionWorkerException("LTX_BATCH_CHANGED");
+        // FileShare.None: an active submission permit makes this throw IOException.
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None,
+            4096, FileOptions.WriteThrough);
+        if (stream.Length is <= 0 or > 1024) throw new ProductionWorkerException("LTX_BATCH_CHANGED");
+        var gate = Parse(stream);
+        if (gate.Mode == Mode.Hold) return; // 11b. Already closed: idempotent.
+        var active = ActiveEntries(gate);
+        if (active is null || current.Count != active.Length
+            || !active.SequenceEqual(current.Select(job => new Entry(job.ProductionJobId, job.PlanDigest ?? ""))))
+            throw new ProductionWorkerException("LTX_BATCH_CHANGED");
+        if (current.Any(job => InFlightStatuses.Contains(job.Status) || job.LeaseExecutorId is not null
+                || job.LeaseExpiresAt is not null))
+            throw new ProductionWorkerException("LTX_BATCH_IN_FLIGHT");
+        var finished = current.All(job => LtxProductionExecutor.IsCandidateSettled(job)
+            || job.Status is "Failed" or "Cancelled");
+        if (!finished && !abandonUnfinished) throw new ProductionWorkerException("LTX_BATCH_NOT_FINISHED");
+        var hold = JsonSerializer.SerializeToUtf8Bytes(new { schema_version = "1.0", mode = "hold" });
+        stream.Position = 0;
+        stream.SetLength(0);
+        stream.Write(hold);
+        stream.Flush(flushToDisk: true);
+    }
+
+    private static Entry[]? ActiveEntries(Snapshot gate) => gate.Mode switch
+    {
+        Mode.AllowLtxBatch when gate.Batch is not null => gate.Batch,
+        Mode.Allow when gate.JobId is not null && gate.PlanDigest is not null => new[] { new Entry(gate.JobId, gate.PlanDigest) },
+        _ => null,
+    };
+
     // 08. Explicit single-shot replacement of an entirely settled batch.
     //     The same GPU lock and journal protect the compare-and-swap.
     internal static void ReplaceSettledLtxShot(IReadOnlyList<ProductionJobRecord> previous,
@@ -398,11 +476,13 @@ internal static class P0ThreeShotAcceptanceGate
     }
 
     /// <summary>无文件表示原模式；有文件但任何错误均只能解释为 HOLD。</summary>
-    private static Snapshot Read()
+    private static Snapshot Read() => ReadAt(DefaultPath);
+
+    private static Snapshot ReadAt(string path)
     {
         try
         {
-            using var stream = OpenGate(DefaultPath);
+            using var stream = OpenGate(path);
             return stream is null ? new(Mode.Unattended) : Parse(stream);
         }
         catch (Exception error) when (error is not OutOfMemoryException)
